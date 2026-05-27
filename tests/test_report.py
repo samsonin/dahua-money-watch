@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from dahua_money_watch.report import (
+    build_daily_report_payload,
     build_daily_report_rows,
     expected_clip_name,
     load_latest_cloud_review_rows,
@@ -75,6 +76,13 @@ def test_build_daily_report_rows_joins_cloud_and_local_metadata(tmp_path):
     assert rows[0]["final_action"] == "manual_review"
     assert rows[0]["payment_type"] == "cash"
     assert rows[0]["metadata_status"] == "matched"
+
+    payload = build_daily_report_payload(tmp_path, "2026-05-27")
+    assert payload["status"] == "complete"
+    assert payload["progress"]["candidate_clips"] == 1
+    assert payload["events"][0]["review"]["payment_likely"] is True
+    assert payload["events"][0]["amount"]["amount"] is None
+    assert payload["events"][0]["accounting"]["comparison_status"] == "manual_review_required"
 
 
 def test_latest_cloud_review_prefers_success_after_error(tmp_path):

@@ -139,6 +139,15 @@ It includes event time, source clip name, final action, payment status, amount
 status, amount, currency, confidence, and model evidence. Add
 `--only-actionable` to exclude ignored clips.
 
+For CRM/accounting integrations, write the same report as typed JSON:
+
+```bash
+dahua-money-watch daily-report \
+  --config configs/production.json \
+  --date 2026-05-27 \
+  --format json
+```
+
 Example cost shape for a small shop archive:
 
 - source video per day: 1-3 hours of motion-triggered clips

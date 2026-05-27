@@ -14,7 +14,7 @@ from .cloud_review import CloudReviewError, default_gcloud_project, review_clip_
 from .dahua import iter_dav_files
 from .license import license_status, load_license
 from .motion import motion_events
-from .report import load_local_clip_metadata, write_daily_report
+from .report import load_local_clip_metadata, write_daily_report, write_daily_report_json
 from .review import cheap_review, safe_name
 from .state import StateStore
 from .video import extract_clip, extract_frame
@@ -66,11 +66,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     cloud.add_argument("--dry-run", action="store_true")
     cloud.set_defaults(func=cloud_review_command)
 
-    daily_report = sub.add_parser("daily-report", help="Write a daily CSV summary for accounting reconciliation.")
+    daily_report = sub.add_parser("daily-report", help="Write a daily summary for accounting reconciliation.")
     daily_report.add_argument("--config", required=True)
     daily_report.add_argument("--date", required=True, help="Source archive date, for example 2026-05-27.")
     daily_report.add_argument("--runtime-dir")
-    daily_report.add_argument("--output", help="CSV output path. Defaults to runtime/reports/accounting-YYYY-MM-DD.csv.")
+    daily_report.add_argument("--format", choices=["csv", "json"], default="csv")
+    daily_report.add_argument("--output", help="Output path. Defaults to runtime/reports/accounting-YYYY-MM-DD.<format>.")
     daily_report.add_argument(
         "--only-actionable",
         action="store_true",
@@ -310,16 +311,21 @@ def cloud_review_command(args: argparse.Namespace) -> int:
 def daily_report_command(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     runtime_dir = resolve_runtime_dir(config, args.runtime_dir)
+    suffix = "json" if args.format == "json" else "csv"
     output_path = (
         Path(args.output)
         if args.output
-        else runtime_dir / "reports" / f"accounting-{args.date}.csv"
+        else runtime_dir / "reports" / f"accounting-{args.date}.{suffix}"
     )
-    rows, summary = write_daily_report(runtime_dir, args.date, output_path, bool(args.only_actionable))
+    if args.format == "json":
+        rows, summary = write_daily_report_json(runtime_dir, args.date, output_path, bool(args.only_actionable))
+    else:
+        rows, summary = write_daily_report(runtime_dir, args.date, output_path, bool(args.only_actionable))
     print(
         json.dumps(
             {
                 "date": args.date,
+                "format": args.format,
                 "rows": rows,
                 "summary": summary,
                 "output": str(output_path),

@@ -60,6 +60,46 @@ def write_daily_report(
     return len(rows), summary
 
 
+def write_daily_report_json(
+    runtime_dir: Path,
+    report_date: str,
+    output_path: Path,
+    only_actionable: bool = False,
+) -> Tuple[int, Dict[str, Any]]:
+    payload = build_daily_report_payload(runtime_dir, report_date, only_actionable)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    return len(payload["events"]), payload["summary"]
+
+
+def build_daily_report_payload(
+    runtime_dir: Path,
+    report_date: str,
+    only_actionable: bool = False,
+) -> Dict[str, Any]:
+    all_rows = build_daily_report_rows(runtime_dir, report_date, False)
+    rows = [row for row in all_rows if row["final_action"] != "ignore"] if only_actionable else all_rows
+    metadata_index, _ambiguous = load_local_clip_metadata(runtime_dir)
+    candidate_count = sum(1 for metadata in metadata_index.values() if metadata.source_date == report_date)
+    reviewed_count = len(all_rows)
+    complete = candidate_count > 0 and reviewed_count >= candidate_count
+    return {
+        "schema_version": "1.0",
+        "report_type": "dahua_money_watch.daily_accounting",
+        "source_date": report_date,
+        "status": "complete" if complete else "partial",
+        "complete": complete,
+        "progress": {
+            "candidate_clips": candidate_count,
+            "gemini_reviewed": reviewed_count,
+            "gemini_remaining": max(0, candidate_count - reviewed_count),
+            "exported_events": len(rows),
+        },
+        "summary": summarize_rows(rows),
+        "events": [json_event_from_row(row) for row in rows],
+    }
+
+
 def build_daily_report_rows(runtime_dir: Path, report_date: str, only_actionable: bool = False) -> List[Dict[str, Any]]:
     metadata_index, ambiguous_names = load_local_clip_metadata(runtime_dir)
     rows: List[Dict[str, Any]] = []
@@ -97,6 +137,61 @@ def summarize_rows(rows: Iterable[Dict[str, Any]]) -> Dict[str, int]:
             summary[action] = 0
         summary[action] += 1
     return summary
+
+
+def json_event_from_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    action = str(row.get("final_action") or "unknown")
+    return {
+        "source_date": row.get("source_date") or "",
+        "event_start_time": row.get("event_start_time") or "",
+        "event_end_time": row.get("event_end_time") or "",
+        "source_file": row.get("source_file") or "",
+        "candidate_clip": row.get("clip") or "",
+        "local": {
+            "class": row.get("local_class") or "",
+            "score": _nullable_float(row.get("local_score")),
+            "metadata_status": row.get("metadata_status") or "",
+        },
+        "review": {
+            "final_action": action,
+            "payment_likely": _nullable_bool(row.get("payment_likely")),
+            "money_handover_visible": _nullable_bool(row.get("money_handover_visible")),
+            "payment_type": row.get("payment_type") or "unknown",
+            "handover_confidence": _nullable_float(row.get("handover_confidence")),
+            "timestamp_hint": row.get("timestamp_hint") or "",
+            "evidence": row.get("handover_evidence") or "",
+            "error": row.get("review_error") or "",
+        },
+        "amount": {
+            "status": row.get("amount_status") or "unknown",
+            "amount": _nullable_float(row.get("amount")),
+            "currency": row.get("currency") or "unknown",
+            "confidence": _nullable_float(row.get("amount_confidence")),
+            "visible_denominations": _json_list(row.get("visible_denominations")),
+            "evidence": row.get("amount_evidence") or "",
+        },
+        "accounting": {
+            "comparison_status": accounting_status(action, row),
+            "comparison_key": {
+                "date": row.get("source_date") or "",
+                "time": row.get("event_start_time") or "",
+                "amount": _nullable_float(row.get("amount")),
+                "currency": row.get("currency") or "unknown",
+            },
+        },
+    }
+
+
+def accounting_status(action: str, row: Dict[str, Any]) -> str:
+    if row.get("review_error"):
+        return "review_error"
+    if action == "crm_compare":
+        return "ready_for_comparison"
+    if action == "manual_review":
+        return "manual_review_required"
+    if action == "ignore":
+        return "not_a_payment"
+    return "unknown"
 
 
 def report_row(
@@ -294,6 +389,35 @@ def _format_float(value: Any) -> str:
         return f"{float(value):.4f}".rstrip("0").rstrip(".")
     except (TypeError, ValueError):
         return str(value)
+
+
+def _nullable_float(value: Any) -> Optional[float]:
+    if value in ("", None):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _nullable_bool(value: Any) -> Optional[bool]:
+    if value in ("", None):
+        return None
+    if isinstance(value, bool):
+        return value
+    return str(value).lower() == "true"
+
+
+def _json_list(value: Any) -> List[Any]:
+    if isinstance(value, list):
+        return value
+    if value in ("", None):
+        return []
+    try:
+        parsed = json.loads(str(value))
+    except json.JSONDecodeError:
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 def _bool_text(value: Any) -> str:
