@@ -53,7 +53,7 @@ pip install -e .
 
 ```bash
 dahua-money-watch run-once \
-  --config configs/production.example.json \
+  --config configs/production.json \
   --date 2026-05-27
 ```
 

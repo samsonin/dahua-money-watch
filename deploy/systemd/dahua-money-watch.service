@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=oneshot
 WorkingDirectory=__PROJECT_DIR__
-ExecStart=__PROJECT_DIR__/.venv/bin/dahua-money-watch run-once --config __PROJECT_DIR__/configs/production.example.json
+ExecStart=__PROJECT_DIR__/.venv/bin/dahua-money-watch run-once --config __PROJECT_DIR__/configs/production.json
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
