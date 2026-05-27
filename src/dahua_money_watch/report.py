@@ -143,7 +143,7 @@ def report_row(
         "event_start_time": event_start_time,
         "event_end_time": event_end_time,
         "source_file": source_file,
-        "clip": clip,
+        "clip": clip_name,
         "local_class": local_class,
         "local_score": local_score,
         "final_action": event.get("recommended_action") or ("error" if cloud_row.get("error") else "unknown"),
