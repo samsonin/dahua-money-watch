@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dahua-money-watch"
+version = "0.1.0"
+description = "Local pre-filter for Dahua camera clips that extracts likely payment handover moments."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+  "numpy>=1.22",
+]
+
+[project.optional-dependencies]
+gemini = [
+  "google-genai>=1.0.0",
+]
+dev = [
+  "pytest>=7",
+]
+
+[project.scripts]
+dahua-money-watch = "dahua_money_watch.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

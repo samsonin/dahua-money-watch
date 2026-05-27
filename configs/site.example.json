@@ -1,0 +1,59 @@
+{
+  "site": {
+    "id": "demo-store-001",
+    "name": "Demo Store",
+    "timezone": "UTC"
+  },
+  "archive_root": "<archive-root>",
+  "pattern": "*/001/dav/*/*.dav",
+  "runtime_dir": "runtime/demo-store-001",
+  "state_db": "runtime/demo-store-001/state/processed.sqlite",
+  "cameras": [
+    {
+      "id": "001",
+      "name": "Counter camera",
+      "path_hint": "001/dav",
+      "roi": {
+        "x": 0,
+        "y": 320,
+        "w": 540,
+        "h": 256
+      }
+    }
+  ],
+  "scan": {
+    "fps": 3.0,
+    "width": 352,
+    "height": 288,
+    "grid_rows": 6,
+    "grid_cols": 8,
+    "window_seconds": 2.0,
+    "percentile": 92.0,
+    "min_score": 4.0,
+    "stable_file_age_seconds": 90
+  },
+  "review": {
+    "fps": 6.0,
+    "width": 270,
+    "height": 128,
+    "pre_padding_seconds": 5.0,
+    "post_padding_seconds": 10.0,
+    "artifact_threshold": 0.35,
+    "max_artifacts_per_file": 8,
+    "medium_threshold": 0.50,
+    "high_threshold": 0.68
+  },
+  "clip": {
+    "enabled": true,
+    "crf": 28,
+    "preset": "ultrafast",
+    "audio": false
+  },
+  "cloud_review": {
+    "enabled": false,
+    "provider": "gemini",
+    "model": "gemini-2.5-flash-lite",
+    "media_resolution": "low",
+    "max_clip_seconds_per_day": 1800
+  }
+}

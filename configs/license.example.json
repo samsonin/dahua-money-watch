@@ -1,0 +1,16 @@
+{
+  "license": {
+    "customer_id": "demo-customer",
+    "site_id": "demo-store-001",
+    "plan": "trial",
+    "expires_at": "2026-12-31",
+    "max_cameras": 1,
+    "features": {
+      "local_scan": true,
+      "clip_export": true,
+      "cloud_review": false,
+      "daily_reports": false
+    }
+  }
+}
+
