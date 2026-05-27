@@ -6,6 +6,7 @@ After=network.target
 Type=oneshot
 WorkingDirectory=__PROJECT_DIR__
 EnvironmentFile=-__PROJECT_DIR__/configs/cloud-review.env
+Environment=PYTHONWARNINGS=ignore
 ExecStart=__PROJECT_DIR__/.venv/bin/dahua-money-watch cloud-review --config __PROJECT_DIR__/configs/production.json
 Nice=12
 IOSchedulingClass=best-effort
