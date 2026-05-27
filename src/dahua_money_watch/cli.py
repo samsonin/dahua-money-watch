@@ -370,7 +370,7 @@ def load_cloud_reviewed_clip_paths(runtime_dir: Path) -> set:
                 except json.JSONDecodeError:
                     continue
                 clip = row.get("clip")
-                if clip:
+                if clip and not row.get("error"):
                     reviewed.add(str(clip))
     return reviewed
 
