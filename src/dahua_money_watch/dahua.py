@@ -66,7 +66,8 @@ def iter_dav_files(
 ) -> Iterable[Path]:
     if date:
         base = archive_root / date
-        iterator = base.glob(pattern.removeprefix("*/")) if pattern.startswith("*/") else base.glob(pattern)
+        date_pattern = pattern[2:] if pattern.startswith("*/") else pattern
+        iterator = base.glob(date_pattern)
     else:
         iterator = archive_root.glob(pattern)
     for path in sorted(iterator):
