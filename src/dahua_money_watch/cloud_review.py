@@ -362,11 +362,11 @@ def _access_token() -> str:
 
 def _service_account_access_token(service_account_file: str) -> str:
     try:
+        import google.auth
         from google.auth.transport.requests import Request
-        from google.oauth2 import service_account
     except ImportError as exc:
         raise CloudReviewError("google-auth is required when GOOGLE_APPLICATION_CREDENTIALS is used.") from exc
-    credentials = service_account.Credentials.from_service_account_file(
+    credentials, _project_id = google.auth.load_credentials_from_file(
         service_account_file,
         scopes=["https://www.googleapis.com/auth/cloud-platform"],
     )
