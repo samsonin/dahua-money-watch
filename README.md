@@ -122,6 +122,21 @@ The default two-stage mode first returns `ignore`, `manual_review`, or `likely_p
 Only `likely_payment` clips get a second amount-estimation request with
 `amount`, `amount_confidence`, and `amount_status`.
 
+## Daily Accounting Report
+
+After local filtering and cloud review, write one CSV file for an archive day:
+
+```bash
+dahua-money-watch daily-report \
+  --config configs/production.json \
+  --date 2026-05-27
+```
+
+The report is written to `runtime/reports/accounting-YYYY-MM-DD.csv` by default.
+It includes event time, source clip name, final action, payment status, amount
+status, amount, currency, confidence, and model evidence. Add
+`--only-actionable` to exclude ignored clips.
+
 Example cost shape for a small shop archive:
 
 - source video per day: 1-3 hours of motion-triggered clips
