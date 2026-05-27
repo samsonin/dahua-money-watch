@@ -4,6 +4,7 @@ import argparse
 import json
 import shutil
 import sys
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -13,7 +14,7 @@ from .cloud_review import CloudReviewError, default_gcloud_project, review_clip_
 from .dahua import iter_dav_files
 from .license import license_status, load_license
 from .motion import motion_events
-from .report import write_daily_report
+from .report import load_local_clip_metadata, write_daily_report
 from .review import cheap_review, safe_name
 from .state import StateStore
 from .video import extract_clip, extract_frame
@@ -390,10 +391,40 @@ def discover_candidate_clips(runtime_dir: Path, limit: int, reviewed_clip_paths:
     if not clips_dir.exists():
         return []
     reviewed = reviewed_clip_paths or set()
-    clips = sorted(clips_dir.glob("high_*.mp4")) + sorted(clips_dir.glob("medium_*.mp4"))
-    if len(clips) < limit:
-        clips.extend(sorted(clips_dir.glob("low_*.mp4"), reverse=True))
-    return [clip for clip in clips if str(clip) not in reviewed][:limit]
+    pending = [clip for clip in sorted(clips_dir.glob("*.mp4"), key=candidate_clip_sort_key) if str(clip) not in reviewed]
+    if not pending:
+        return []
+
+    metadata_by_name, _ambiguous = load_local_clip_metadata(runtime_dir)
+    by_day: Dict[str, List[Path]] = defaultdict(list)
+    undated: List[Path] = []
+    for clip in pending:
+        metadata = metadata_by_name.get(clip.name)
+        if metadata and metadata.source_date:
+            by_day[metadata.source_date].append(clip)
+        else:
+            undated.append(clip)
+
+    selected: List[Path] = []
+    for day in sorted(by_day):
+        selected.extend(sorted(by_day[day], key=candidate_clip_sort_key)[: max(0, limit - len(selected))])
+        if len(selected) >= limit:
+            return selected[:limit]
+    selected.extend(undated[: max(0, limit - len(selected))])
+    return selected[:limit]
+
+
+def candidate_clip_sort_key(path: Path) -> tuple:
+    parts = path.name.split("_", 2)
+    event_class = parts[0] if parts else ""
+    score = 0.0
+    if len(parts) > 1:
+        try:
+            score = float(parts[1].replace("p", "."))
+        except ValueError:
+            score = 0.0
+    class_order = {"high": 0, "medium": 1, "low": 2}.get(event_class, 3)
+    return (class_order, -score, path.name)
 
 
 def load_cloud_reviewed_clip_paths(runtime_dir: Path) -> set:

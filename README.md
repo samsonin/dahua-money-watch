@@ -121,6 +121,8 @@ dahua-money-watch cloud-review \
 The default two-stage mode first returns `ignore`, `manual_review`, or `likely_payment`.
 Only `likely_payment` clips get a second amount-estimation request with
 `amount`, `amount_confidence`, and `amount_status`.
+When multiple archive days are waiting, cloud review prioritizes the oldest
+source day first so daily accounting reports become complete one by one.
 
 ## Daily Accounting Report
 
