@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import load_config, resolve_archive_root, resolve_runtime_dir, roi_from_config
-from .cloud_review import CloudReviewError, default_gcloud_project, review_clip_with_vertex
+from .cloud_review import CloudReviewError, default_gcloud_project, review_clip_with_vertex, two_stage_money_review
 from .dahua import iter_dav_files
 from .license import license_status, load_license
 from .motion import motion_events
@@ -59,6 +59,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     cloud.add_argument("--location", help="Vertex AI location. Defaults to config or global.")
     cloud.add_argument("--model", help="Gemini model id. Defaults to config or gemini-2.5-flash-lite.")
     cloud.add_argument("--limit", type=int, default=3)
+    cloud.add_argument("--stage", choices=["handover", "two-stage"], default="two-stage")
+    cloud.add_argument("--include-reviewed", action="store_true", help="Review clips even if they already appear in cloud review logs.")
     cloud.add_argument("--dry-run", action="store_true")
     cloud.set_defaults(func=cloud_review_command)
 
@@ -201,6 +203,8 @@ def init_site_command(args: argparse.Namespace) -> int:
             "enabled": False,
             "provider": "gemini",
             "model": "gemini-2.5-flash-lite",
+            "location": "global",
+            "stage": "two-stage",
             "media_resolution": "low",
             "max_clip_seconds_per_day": 1800,
         },
@@ -242,7 +246,10 @@ def cloud_review_command(args: argparse.Namespace) -> int:
     project = args.project or cloud_cfg.get("project") or env("GOOGLE_CLOUD_PROJECT") or default_gcloud_project()
     location = args.location or cloud_cfg.get("location") or env("GOOGLE_CLOUD_LOCATION") or "global"
     model = args.model or cloud_cfg.get("model") or "gemini-2.5-flash-lite"
-    clips = [Path(path) for path in args.clip] if args.clip else discover_candidate_clips(runtime_dir, args.limit)
+    reviewed_clip_paths = set() if args.include_reviewed else load_cloud_reviewed_clip_paths(runtime_dir)
+    clips = [Path(path) for path in args.clip] if args.clip else discover_candidate_clips(runtime_dir, args.limit, reviewed_clip_paths)
+    if args.clip and reviewed_clip_paths:
+        clips = [clip for clip in clips if str(clip) not in reviewed_clip_paths]
 
     if not clips:
         print(json.dumps({"reviewed": 0, "reason": "no clips selected"}, ensure_ascii=False))
@@ -259,12 +266,22 @@ def cloud_review_command(args: argparse.Namespace) -> int:
     with output_path.open("a") as handle:
         for clip in clips[: args.limit]:
             try:
-                result = review_clip_with_vertex(clip, project, location, model)
+                if args.stage == "handover":
+                    result = review_clip_with_vertex(clip, project, location, model)
+                else:
+                    result = two_stage_money_review(
+                        clip,
+                        project,
+                        location,
+                        model,
+                        runtime_dir / "cloud-reviews" / "amount-frames",
+                    )
             except CloudReviewError as exc:
                 result = {
                     "clip": str(clip),
                     "model": model,
                     "location": location,
+                    "stage": args.stage,
                     "error": str(exc),
                 }
             handle.write(json.dumps(result, ensure_ascii=False) + "\n")
@@ -330,14 +347,30 @@ def append_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def discover_candidate_clips(runtime_dir: Path, limit: int) -> List[Path]:
+def discover_candidate_clips(runtime_dir: Path, limit: int, reviewed_clip_paths: Optional[set] = None) -> List[Path]:
     clips_dir = runtime_dir / "clips"
     if not clips_dir.exists():
         return []
+    reviewed = reviewed_clip_paths or set()
     clips = sorted(clips_dir.glob("high_*.mp4")) + sorted(clips_dir.glob("medium_*.mp4"))
     if len(clips) < limit:
         clips.extend(sorted(clips_dir.glob("low_*.mp4"), reverse=True))
-    return clips[:limit]
+    return [clip for clip in clips if str(clip) not in reviewed][:limit]
+
+
+def load_cloud_reviewed_clip_paths(runtime_dir: Path) -> set:
+    reviewed = set()
+    for path in (runtime_dir / "cloud-reviews").glob("*.jsonl"):
+        with path.open() as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                clip = row.get("clip")
+                if clip:
+                    reviewed.add(str(clip))
+    return reviewed
 
 
 def env(name: str) -> Optional[str]:

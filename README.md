@@ -114,8 +114,13 @@ gcloud config set project <google-cloud-project>
 dahua-money-watch cloud-review \
   --config configs/production.example.json \
   --clip <candidate-clip.mp4> \
-  --limit 1
+  --limit 1 \
+  --stage two-stage
 ```
+
+The default two-stage mode first returns `ignore`, `manual_review`, or `likely_payment`.
+Only `likely_payment` clips get a second amount-estimation request with
+`amount`, `amount_confidence`, and `amount_status`.
 
 Example cost shape for a small shop archive:
 
