@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Dahua Money Watch cloud review hourly
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

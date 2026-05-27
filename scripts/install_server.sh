@@ -18,6 +18,8 @@ mkdir -p "$PROJECT_DIR/runtime"/{events,clips,thumbs,state,logs}
 
 sed "s#__PROJECT_DIR__#$PROJECT_DIR#g" deploy/systemd/dahua-money-watch.service > /etc/systemd/system/dahua-money-watch.service
 install -m 0644 deploy/systemd/dahua-money-watch.timer /etc/systemd/system/dahua-money-watch.timer
+sed "s#__PROJECT_DIR__#$PROJECT_DIR#g" deploy/systemd/dahua-money-watch-cloud.service > /etc/systemd/system/dahua-money-watch-cloud.service
+install -m 0644 deploy/systemd/dahua-money-watch-cloud.timer /etc/systemd/system/dahua-money-watch-cloud.timer
 
 systemctl daemon-reload
 systemctl enable --now dahua-money-watch.timer

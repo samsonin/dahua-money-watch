@@ -1,0 +1,12 @@
+[Unit]
+Description=Dahua Money Watch cloud review scanner
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__PROJECT_DIR__
+EnvironmentFile=-__PROJECT_DIR__/configs/cloud-review.env
+ExecStart=__PROJECT_DIR__/.venv/bin/dahua-money-watch cloud-review --config __PROJECT_DIR__/configs/production.json
+Nice=12
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

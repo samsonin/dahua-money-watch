@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
   "numpy>=1.22",
+  "google-auth>=2.30",
 ]
 
 [project.optional-dependencies]

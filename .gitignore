@@ -15,6 +15,8 @@ configs/sites/
 configs/*.local.json
 configs/production.json
 configs/license.json
+configs/cloud-review.env
+secrets/
 
 # Runtime data: keep out of Git and remote repositories.
 runtime/

@@ -338,6 +338,9 @@ def _access_token() -> str:
     env_token = os.environ.get("GOOGLE_OAUTH_ACCESS_TOKEN")
     if env_token:
         return env_token
+    service_account_file = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if service_account_file:
+        return _service_account_access_token(service_account_file)
     try:
         proc = subprocess.run(
             ["gcloud", "auth", "print-access-token"],
@@ -355,6 +358,22 @@ def _access_token() -> str:
     if not token:
         raise CloudReviewError("Google access token command returned an empty token.")
     return token
+
+
+def _service_account_access_token(service_account_file: str) -> str:
+    try:
+        from google.auth.transport.requests import Request
+        from google.oauth2 import service_account
+    except ImportError as exc:
+        raise CloudReviewError("google-auth is required when GOOGLE_APPLICATION_CREDENTIALS is used.") from exc
+    credentials = service_account.Credentials.from_service_account_file(
+        service_account_file,
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+    )
+    credentials.refresh(Request())
+    if not credentials.token:
+        raise CloudReviewError("Service account credentials did not return an access token.")
+    return str(credentials.token)
 
 
 def _post_json(url: str, payload: Dict[str, Any], token: str, timeout_seconds: int) -> Dict[str, Any]:

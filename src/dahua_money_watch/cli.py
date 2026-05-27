@@ -58,7 +58,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     cloud.add_argument("--project", help="Google Cloud project id. Defaults to config or GOOGLE_CLOUD_PROJECT.")
     cloud.add_argument("--location", help="Vertex AI location. Defaults to config or global.")
     cloud.add_argument("--model", help="Gemini model id. Defaults to config or gemini-2.5-flash-lite.")
-    cloud.add_argument("--limit", type=int, default=3)
+    cloud.add_argument("--limit", type=int)
     cloud.add_argument("--stage", choices=["handover", "two-stage"], default="two-stage")
     cloud.add_argument("--include-reviewed", action="store_true", help="Review clips even if they already appear in cloud review logs.")
     cloud.add_argument("--dry-run", action="store_true")
@@ -206,6 +206,7 @@ def init_site_command(args: argparse.Namespace) -> int:
             "location": "global",
             "stage": "two-stage",
             "media_resolution": "low",
+            "max_clips_per_run": 20,
             "max_clip_seconds_per_day": 1800,
         },
     }
@@ -247,7 +248,8 @@ def cloud_review_command(args: argparse.Namespace) -> int:
     location = args.location or cloud_cfg.get("location") or env("GOOGLE_CLOUD_LOCATION") or "global"
     model = args.model or cloud_cfg.get("model") or "gemini-2.5-flash-lite"
     reviewed_clip_paths = set() if args.include_reviewed else load_cloud_reviewed_clip_paths(runtime_dir)
-    clips = [Path(path) for path in args.clip] if args.clip else discover_candidate_clips(runtime_dir, args.limit, reviewed_clip_paths)
+    limit = int(args.limit or cloud_cfg.get("max_clips_per_run") or 20)
+    clips = [Path(path) for path in args.clip] if args.clip else discover_candidate_clips(runtime_dir, limit, reviewed_clip_paths)
     if args.clip and reviewed_clip_paths:
         clips = [clip for clip in clips if str(clip) not in reviewed_clip_paths]
 
@@ -264,7 +266,7 @@ def cloud_review_command(args: argparse.Namespace) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     reviewed = 0
     with output_path.open("a") as handle:
-        for clip in clips[: args.limit]:
+        for clip in clips[:limit]:
             try:
                 if args.stage == "handover":
                     result = review_clip_with_vertex(clip, project, location, model)
