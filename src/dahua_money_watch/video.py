@@ -98,4 +98,4 @@ def extract_frame(source: Path, target: Path, offset_s: float) -> None:
         "1",
         str(target),
     ]
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
