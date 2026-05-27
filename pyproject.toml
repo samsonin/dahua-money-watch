@@ -13,9 +13,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gemini = [
-  "google-genai>=1.0.0",
-]
 dev = [
   "pytest>=7",
 ]
@@ -25,4 +22,3 @@ dahua-money-watch = "dahua_money_watch.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

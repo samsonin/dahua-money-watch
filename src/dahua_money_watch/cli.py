@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import load_config, resolve_archive_root, resolve_runtime_dir, roi_from_config
+from .cloud_review import CloudReviewError, default_gcloud_project, review_clip_with_vertex
 from .dahua import iter_dav_files
 from .license import license_status, load_license
 from .motion import motion_events
@@ -49,6 +50,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     license_info = sub.add_parser("license-info", help="Print license information.")
     license_info.add_argument("--license", required=True)
     license_info.set_defaults(func=license_info_command)
+
+    cloud = sub.add_parser("cloud-review", help="Review candidate clips with a cloud visual model.")
+    cloud.add_argument("--config", required=True)
+    cloud.add_argument("--clip", action="append", help="Specific MP4 clip to review. Can be repeated.")
+    cloud.add_argument("--runtime-dir")
+    cloud.add_argument("--project", help="Google Cloud project id. Defaults to config or GOOGLE_CLOUD_PROJECT.")
+    cloud.add_argument("--location", help="Vertex AI location. Defaults to config or global.")
+    cloud.add_argument("--model", help="Gemini model id. Defaults to config or gemini-2.5-flash-lite.")
+    cloud.add_argument("--limit", type=int, default=3)
+    cloud.add_argument("--dry-run", action="store_true")
+    cloud.set_defaults(func=cloud_review_command)
 
     args = parser.parse_args(argv)
     return int(args.func(args))
@@ -223,6 +235,45 @@ def license_info_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def cloud_review_command(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    runtime_dir = resolve_runtime_dir(config, args.runtime_dir)
+    cloud_cfg = config.get("cloud_review", {})
+    project = args.project or cloud_cfg.get("project") or env("GOOGLE_CLOUD_PROJECT") or default_gcloud_project()
+    location = args.location or cloud_cfg.get("location") or env("GOOGLE_CLOUD_LOCATION") or "global"
+    model = args.model or cloud_cfg.get("model") or "gemini-2.5-flash-lite"
+    clips = [Path(path) for path in args.clip] if args.clip else discover_candidate_clips(runtime_dir, args.limit)
+
+    if not clips:
+        print(json.dumps({"reviewed": 0, "reason": "no clips selected"}, ensure_ascii=False))
+        return 0
+    if args.dry_run:
+        print(json.dumps({"dry_run": True, "model": model, "clips": [str(path) for path in clips]}, indent=2))
+        return 0
+    if not project:
+        raise SystemExit("Google Cloud project is required. Pass --project or set GOOGLE_CLOUD_PROJECT.")
+
+    output_path = runtime_dir / "cloud-reviews" / f"cloud-reviewed-{today_stamp()}.jsonl"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    reviewed = 0
+    with output_path.open("a") as handle:
+        for clip in clips[: args.limit]:
+            try:
+                result = review_clip_with_vertex(clip, project, location, model)
+            except CloudReviewError as exc:
+                result = {
+                    "clip": str(clip),
+                    "model": model,
+                    "location": location,
+                    "error": str(exc),
+                }
+            handle.write(json.dumps(result, ensure_ascii=False) + "\n")
+            print(json.dumps(result, ensure_ascii=False))
+            reviewed += 1
+    print(json.dumps({"reviewed": reviewed, "output": str(output_path)}, ensure_ascii=False))
+    return 0
+
+
 def write_artifacts(reviewed: List[Dict[str, Any]], runtime_dir: Path, config: Dict[str, Any]) -> None:
     clip_cfg = config["clip"]
     review_cfg = config["review"]
@@ -268,7 +319,7 @@ def write_artifacts(reviewed: List[Dict[str, Any]], runtime_dir: Path, config: D
 
 
 def ensure_runtime_dirs(runtime_dir: Path) -> None:
-    for name in ["events", "clips", "thumbs", "state", "logs"]:
+    for name in ["events", "clips", "thumbs", "state", "logs", "cloud-reviews"]:
         (runtime_dir / name).mkdir(parents=True, exist_ok=True)
 
 
@@ -277,6 +328,23 @@ def append_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
     with path.open("a") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def discover_candidate_clips(runtime_dir: Path, limit: int) -> List[Path]:
+    clips_dir = runtime_dir / "clips"
+    if not clips_dir.exists():
+        return []
+    clips = sorted(clips_dir.glob("high_*.mp4")) + sorted(clips_dir.glob("medium_*.mp4"))
+    if len(clips) < limit:
+        clips.extend(sorted(clips_dir.glob("low_*.mp4"), reverse=True))
+    return clips[:limit]
+
+
+def env(name: str) -> Optional[str]:
+    import os
+
+    value = os.environ.get(name)
+    return value if value else None
 
 
 def require_ffmpeg() -> None:

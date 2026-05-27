@@ -106,6 +106,17 @@ SITE_ID=customer-store-001 \
 
 The local pipeline creates candidate clips first. Cloud review should only receive clips from `runtime/clips`, not the original day archive.
 
+Local smoke test with Vertex AI:
+
+```bash
+gcloud auth login
+gcloud config set project <google-cloud-project>
+dahua-money-watch cloud-review \
+  --config configs/production.example.json \
+  --clip <candidate-clip.mp4> \
+  --limit 1
+```
+
 Example cost shape for a small shop archive:
 
 - source video per day: 1-3 hours of motion-triggered clips

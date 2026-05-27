@@ -41,6 +41,7 @@
     "enabled": false,
     "provider": "gemini",
     "model": "gemini-2.5-flash-lite",
+    "location": "global",
     "media_resolution": "low"
   }
 }
