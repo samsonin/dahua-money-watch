@@ -1,9 +1,9 @@
 [Unit]
-Description=Run Dahua Money Watch hourly
+Description=Run Dahua Money Watch local scanner
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=1h
+OnUnitInactiveSec=5min
 AccuracySec=30s
 Persistent=true
 
