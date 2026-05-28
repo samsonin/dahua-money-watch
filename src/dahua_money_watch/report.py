@@ -182,6 +182,7 @@ def json_event_from_row(row: Dict[str, Any]) -> Dict[str, Any]:
         },
         "evidence": {
             "handover_clip": row.get("handover_clip") or "",
+            "handover_clip_url": row.get("handover_clip_url") or "",
         },
     }
 

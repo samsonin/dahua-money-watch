@@ -167,9 +167,11 @@ def test_json_event_marks_confirmed_handover_candidate_with_evidence_clip():
             "review_error": "",
             "handover_confirmed": True,
             "handover_clip": "handover-clips/by-source-date/2026-05-27/candidate_handover.mp4",
+            "handover_clip_url": "https://clips.example/evidence-clips/by-source-date/2026-05-27/candidate_handover.mp4",
         }
     )
 
     assert event["review"]["handover_confirmed"] is True
     assert event["evidence"]["handover_clip"] == "handover-clips/by-source-date/2026-05-27/candidate_handover.mp4"
+    assert event["evidence"]["handover_clip_url"] == "https://clips.example/evidence-clips/by-source-date/2026-05-27/candidate_handover.mp4"
     assert event["accounting"]["comparison_status"] == "handover_confirmed_amount_estimated"

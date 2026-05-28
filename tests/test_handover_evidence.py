@@ -88,6 +88,7 @@ def test_build_handover_evidence_payload_filters_confirmed_candidates_and_writes
         {
             "review": {"pre_padding_seconds": 5.0},
             "clip": {"crf": 24, "preset": "fast"},
+            "evidence": {"clip_base_url": "https://clips.example/evidence-clips"},
         },
         cloud_path,
         min_handover_confidence=0.8,
@@ -102,6 +103,7 @@ def test_build_handover_evidence_payload_filters_confirmed_candidates_and_writes
     assert payload["events"][0]["amount"]["amount"] == 1000
     assert payload["events"][0]["accounting"]["comparison_status"] == "handover_confirmed_amount_estimated"
     assert payload["events"][0]["evidence"]["handover_clip"].endswith("_handover.mp4")
+    assert payload["events"][0]["evidence"]["handover_clip_url"].startswith("https://clips.example/evidence-clips/")
     assert len(calls) == 1
     assert calls[0][0] == source
     assert calls[0][2] == 14.0

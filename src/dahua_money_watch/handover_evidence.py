@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -25,6 +26,7 @@ def build_handover_evidence_payload(
     source_rows = 0
     confirmed_candidates = 0
     source_dates = {}
+    clip_base_url = evidence_clip_base_url(config)
 
     for cloud_row in _read_jsonl(cloud_review_path):
         source_rows += 1
@@ -50,6 +52,8 @@ def build_handover_evidence_payload(
             )
             if clip_path:
                 row["handover_clip"] = _relative_to_runtime(runtime_dir, clip_path)
+                if clip_base_url:
+                    row["handover_clip_url"] = join_clip_url(clip_base_url, row["handover_clip"])
             if error:
                 clip_errors.append({"clip": row.get("clip") or "", "error": error})
                 continue
@@ -172,6 +176,20 @@ def parse_timestamp_hint(value: str) -> Optional[float]:
     if len(parts) == 3 and all(part.isdigit() for part in parts):
         return float(int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2]))
     return None
+
+
+def evidence_clip_base_url(config: Dict[str, Any]) -> str:
+    evidence_cfg = config.get("evidence", {})
+    if isinstance(evidence_cfg, dict) and evidence_cfg.get("clip_base_url"):
+        return str(evidence_cfg["clip_base_url"]).rstrip("/")
+    return str(os.environ.get("EVIDENCE_CLIPS_BASE_URL") or "").rstrip("/")
+
+
+def join_clip_url(base_url: str, clip_path: str) -> str:
+    path = clip_path
+    if path.startswith("handover-clips/"):
+        path = path[len("handover-clips/") :]
+    return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
 
 
 def _read_jsonl(path: Path):

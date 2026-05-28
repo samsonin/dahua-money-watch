@@ -3,12 +3,20 @@ set -euo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 CONFIG="${CONFIG:-$PROJECT_DIR/configs/production.json}"
+EVIDENCE_ENV_FILE="${EVIDENCE_ENV_FILE:-$PROJECT_DIR/configs/evidence-clips.env}"
 DATE="${1:-${DATE:-}}"
 MIN_HANDOVER_CONFIDENCE="${MIN_HANDOVER_CONFIDENCE:-0.8}"
 PRE_SECONDS="${PRE_SECONDS:-3}"
 POST_SECONDS="${POST_SECONDS:-5}"
 
 cd "$PROJECT_DIR"
+
+if [[ -f "$EVIDENCE_ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$EVIDENCE_ENV_FILE"
+  set +a
+fi
 
 if [[ -z "$DATE" ]]; then
   echo "Usage: $0 YYYY-MM-DD" >&2
