@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from .config import load_config, resolve_archive_root, resolve_runtime_dir, roi_from_config
 from .cloud_review import CloudReviewError, default_gcloud_project, review_clip_with_vertex, two_stage_money_review
 from .dahua import iter_dav_files, parse_dahua_clip
+from .handover_evidence import write_handover_evidence_report
 from .license import license_status, load_license
 from .motion import motion_events
 from .report import load_local_clip_metadata, write_daily_report, write_daily_report_json
@@ -78,6 +79,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Exclude ignored clips and keep only manual review, CRM compare, and errors.",
     )
     daily_report.set_defaults(func=daily_report_command)
+
+    handover_report = sub.add_parser(
+        "handover-report",
+        help="Write confirmed cash handover evidence JSON and short audio clips from a cloud-review JSONL file.",
+    )
+    handover_report.add_argument("--config", required=True)
+    handover_report.add_argument("--cloud-review-jsonl", required=True)
+    handover_report.add_argument("--date", help="Optional source date filter, for example 2026-05-27.")
+    handover_report.add_argument("--runtime-dir")
+    handover_report.add_argument("--output", required=True)
+    handover_report.add_argument("--min-handover-confidence", type=float, default=0.8)
+    handover_report.add_argument("--pre-seconds", type=float, default=3.0)
+    handover_report.add_argument("--post-seconds", type=float, default=5.0)
+    handover_report.set_defaults(func=handover_report_command)
 
     args = parser.parse_args(argv)
     return int(args.func(args))
@@ -342,6 +357,35 @@ def daily_report_command(args: argparse.Namespace) -> int:
                 "format": args.format,
                 "rows": rows,
                 "summary": summary,
+                "output": str(output_path),
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def handover_report_command(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    runtime_dir = resolve_runtime_dir(config, args.runtime_dir)
+    output_path = Path(args.output)
+    rows, payload = write_handover_evidence_report(
+        runtime_dir,
+        config,
+        Path(args.cloud_review_jsonl),
+        output_path,
+        args.date,
+        float(args.min_handover_confidence),
+        float(args.pre_seconds),
+        float(args.post_seconds),
+    )
+    print(
+        json.dumps(
+            {
+                "date": args.date or "mixed",
+                "rows": rows,
+                "summary": payload["summary"],
+                "progress": payload["progress"],
                 "output": str(output_path),
             },
             ensure_ascii=False,

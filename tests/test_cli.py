@@ -1,7 +1,13 @@
 import json
 from pathlib import Path
 
-from dahua_money_watch.cli import cloud_review_command, cloud_review_output_path, discover_candidate_clips, event_output_paths
+from dahua_money_watch.cli import (
+    cloud_review_command,
+    cloud_review_output_path,
+    discover_candidate_clips,
+    event_output_paths,
+    handover_report_command,
+)
 from dahua_money_watch.report import expected_clip_name
 
 
@@ -135,3 +141,67 @@ def test_event_output_paths_use_source_date(tmp_path):
 
     assert events_path == tmp_path / "events" / "by-source-date" / "2026-05-18" / "events-2026-05-18.jsonl"
     assert reviewed_path == tmp_path / "events" / "by-source-date" / "2026-05-18" / "reviewed-2026-05-18.jsonl"
+
+
+def test_handover_report_command_uses_config_and_writes_payload(tmp_path, monkeypatch):
+    config = {
+        "runtime_dir": str(tmp_path),
+        "archive_root": "/archive",
+        "pattern": "*.dav",
+        "state_db": str(tmp_path / "state" / "processed.sqlite"),
+        "roi": {"x": 0, "y": 0, "w": 10, "h": 10},
+        "scan": {"stable_file_age_seconds": 90},
+        "review": {},
+        "clip": {},
+    }
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(config))
+    cloud_path = tmp_path / "cloud.jsonl"
+    cloud_path.write_text("")
+    output_path = tmp_path / "reports" / "handover.json"
+    captured = {}
+
+    def fake_write_report(runtime_dir, config_arg, cloud_review_path, output, report_date, min_confidence, pre_seconds, post_seconds):
+        captured.update(
+            {
+                "runtime_dir": runtime_dir,
+                "config": config_arg,
+                "cloud_review_path": cloud_review_path,
+                "output": output,
+                "report_date": report_date,
+                "min_confidence": min_confidence,
+                "pre_seconds": pre_seconds,
+                "post_seconds": post_seconds,
+            }
+        )
+        output.parent.mkdir(parents=True)
+        output.write_text("{}\n")
+        return 3, {"summary": {"total": 3}, "progress": {"source_cloud_review_rows": 5}}
+
+    monkeypatch.setattr("dahua_money_watch.cli.write_handover_evidence_report", fake_write_report)
+
+    result = handover_report_command(
+        type(
+            "Args",
+            (),
+            {
+                "config": str(config_path),
+                "runtime_dir": None,
+                "cloud_review_jsonl": str(cloud_path),
+                "date": "2026-05-27",
+                "output": str(output_path),
+                "min_handover_confidence": 0.85,
+                "pre_seconds": 2.0,
+                "post_seconds": 6.0,
+            },
+        )()
+    )
+
+    assert result == 0
+    assert captured["runtime_dir"] == tmp_path
+    assert captured["cloud_review_path"] == cloud_path
+    assert captured["output"] == output_path
+    assert captured["report_date"] == "2026-05-27"
+    assert captured["min_confidence"] == 0.85
+    assert captured["pre_seconds"] == 2.0
+    assert captured["post_seconds"] == 6.0

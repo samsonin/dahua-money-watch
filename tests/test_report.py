@@ -6,6 +6,7 @@ from dahua_money_watch.report import (
     build_daily_report_payload,
     build_daily_report_rows,
     expected_clip_name,
+    json_event_from_row,
     load_latest_cloud_review_rows,
     load_reviewed_event_rows,
     parse_clip_event_times,
@@ -137,3 +138,38 @@ def test_load_reviewed_event_rows_reads_source_date_subdirectories(tmp_path):
 
 def test_accounting_status_marks_crm_compare_candidate_ready():
     assert accounting_status("crm_compare_candidate", {}) == "ready_for_candidate_comparison"
+
+
+def test_json_event_marks_confirmed_handover_candidate_with_evidence_clip():
+    event = json_event_from_row(
+        {
+            "source_date": "2026-05-27",
+            "event_start_time": "15:08:32",
+            "event_end_time": "15:08:35",
+            "source_file": "15.08.16-15.09.32[M][0@0][0].dav",
+            "clip": "candidate.mp4",
+            "local_class": "high",
+            "local_score": "0.707",
+            "metadata_status": "matched",
+            "final_action": "crm_compare_candidate",
+            "payment_likely": "true",
+            "money_handover_visible": "true",
+            "payment_type": "cash",
+            "handover_confidence": "0.9",
+            "amount_status": "estimated",
+            "amount": 1000,
+            "currency": "RUB",
+            "amount_confidence": "0.6",
+            "visible_denominations": "[1000]",
+            "timestamp_hint": "00:06",
+            "handover_evidence": "Cash handover is visible.",
+            "amount_evidence": "A note may be 1000 RUB.",
+            "review_error": "",
+            "handover_confirmed": True,
+            "handover_clip": "handover-clips/by-source-date/2026-05-27/candidate_handover.mp4",
+        }
+    )
+
+    assert event["review"]["handover_confirmed"] is True
+    assert event["evidence"]["handover_clip"] == "handover-clips/by-source-date/2026-05-27/candidate_handover.mp4"
+    assert event["accounting"]["comparison_status"] == "handover_confirmed_amount_estimated"
