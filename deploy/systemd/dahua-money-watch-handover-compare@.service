@@ -1,0 +1,11 @@
+[Unit]
+Description=Dahua Money Watch handover evidence sender for %i
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__PROJECT_DIR__
+ExecStart=__PROJECT_DIR__/scripts/run_handover_compare.sh %i
+Nice=12
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

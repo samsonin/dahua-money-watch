@@ -61,6 +61,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     cloud.add_argument("--location", help="Vertex AI location. Defaults to config or global.")
     cloud.add_argument("--model", help="Gemini model id. Defaults to config or gemini-2.5-flash-lite.")
     cloud.add_argument("--escalation-model", help="Second-pass model for manual_review clips. Defaults to config.")
+    cloud.add_argument("--date", help="Only review clips whose source archive date matches YYYY-MM-DD.")
     cloud.add_argument("--limit", type=int)
     cloud.add_argument("--stage", choices=["handover", "two-stage"], default="two-stage")
     cloud.add_argument("--include-reviewed", action="store_true", help="Review clips even if they already appear in cloud review logs.")
@@ -289,7 +290,11 @@ def cloud_review_command(args: argparse.Namespace) -> int:
         escalation_model = None
     reviewed_clip_paths = set() if args.include_reviewed else load_cloud_reviewed_clip_paths(runtime_dir)
     limit = int(args.limit or cloud_cfg.get("max_clips_per_run") or 20)
-    clips = [Path(path) for path in args.clip] if args.clip else discover_candidate_clips(runtime_dir, limit, reviewed_clip_paths)
+    clips = (
+        [Path(path) for path in args.clip]
+        if args.clip
+        else discover_candidate_clips(runtime_dir, limit, reviewed_clip_paths, getattr(args, "date", None))
+    )
     if args.clip and reviewed_clip_paths:
         clips = [clip for clip in clips if str(clip) not in reviewed_clip_paths]
 
@@ -450,7 +455,12 @@ def append_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def discover_candidate_clips(runtime_dir: Path, limit: int, reviewed_clip_paths: Optional[set] = None) -> List[Path]:
+def discover_candidate_clips(
+    runtime_dir: Path,
+    limit: int,
+    reviewed_clip_paths: Optional[set] = None,
+    source_date: Optional[str] = None,
+) -> List[Path]:
     clips_dir = runtime_dir / "clips"
     if not clips_dir.exists():
         return []
@@ -460,6 +470,12 @@ def discover_candidate_clips(runtime_dir: Path, limit: int, reviewed_clip_paths:
         return []
 
     metadata_by_name, _ambiguous = load_local_clip_metadata(runtime_dir)
+    if source_date:
+        pending = [
+            clip
+            for clip in pending
+            if metadata_by_name.get(clip.name) is not None and metadata_by_name[clip.name].source_date == source_date
+        ]
     by_day: Dict[str, List[Path]] = defaultdict(list)
     undated: List[Path] = []
     for clip in pending:

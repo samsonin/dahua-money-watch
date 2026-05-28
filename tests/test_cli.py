@@ -61,6 +61,18 @@ def test_discover_candidate_clips_fills_limit_after_oldest_day_is_closed(tmp_pat
     assert selected == [old_low_path, new_high_path]
 
 
+def test_discover_candidate_clips_can_filter_source_date(tmp_path):
+    old_high = event("2026-05-18", "high", 0.7, "09:01:00", "09:01:05")
+    new_high = event("2026-05-19", "high", 0.9, "09:01:00", "09:01:05")
+    write_jsonl(tmp_path / "events" / "reviewed-2026-05-27.jsonl", [new_high, old_high])
+    touch_clip(tmp_path, old_high)
+    new_high_path = touch_clip(tmp_path, new_high)
+
+    selected = discover_candidate_clips(tmp_path, limit=10, source_date="2026-05-19")
+
+    assert selected == [new_high_path]
+
+
 def test_cloud_review_command_passes_escalation_model_from_config(tmp_path, monkeypatch):
     clip = tmp_path / "clips" / "candidate.mp4"
     clip.parent.mkdir(parents=True)
@@ -113,6 +125,7 @@ def test_cloud_review_command_passes_escalation_model_from_config(tmp_path, monk
                 "location": None,
                 "model": None,
                 "include_reviewed": False,
+                "date": None,
                 "limit": 1,
                 "clip": [str(clip)],
                 "dry_run": False,
