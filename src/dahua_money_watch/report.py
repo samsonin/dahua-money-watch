@@ -291,13 +291,17 @@ def load_local_clip_metadata(runtime_dir: Path) -> Tuple[Dict[str, LocalClipMeta
 
 def load_reviewed_event_rows(runtime_dir: Path) -> Iterable[Dict[str, Any]]:
     events_dir = runtime_dir / "events"
-    for path in sorted(events_dir.glob("reviewed-*.jsonl")):
+    paths = list(events_dir.glob("reviewed-*.jsonl"))
+    paths.extend((events_dir / "by-source-date").glob("*/reviewed-*.jsonl"))
+    for path in sorted(paths):
         yield from _read_jsonl(path)
 
 
 def load_cloud_review_rows(runtime_dir: Path) -> Iterable[Dict[str, Any]]:
     review_dir = runtime_dir / "cloud-reviews"
-    for path in sorted(review_dir.glob("cloud-reviewed-*.jsonl")):
+    paths = list(review_dir.glob("cloud-reviewed-*.jsonl"))
+    paths.extend((review_dir / "by-source-date").glob("*/*.jsonl"))
+    for path in sorted(paths):
         yield from _read_jsonl(path)
 
 

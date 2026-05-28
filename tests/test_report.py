@@ -7,6 +7,7 @@ from dahua_money_watch.report import (
     build_daily_report_rows,
     expected_clip_name,
     load_latest_cloud_review_rows,
+    load_reviewed_event_rows,
     parse_clip_event_times,
 )
 
@@ -100,6 +101,38 @@ def test_latest_cloud_review_prefers_success_after_error(tmp_path):
 
     assert len(rows) == 1
     assert "error" not in rows[0]
+
+
+def test_load_cloud_review_rows_reads_source_date_subdirectories(tmp_path):
+    legacy_clip = "/runtime/clips/legacy.mp4"
+    source_date_clip = "/runtime/clips/source-date.mp4"
+    write_jsonl(tmp_path / "cloud-reviews" / "cloud-reviewed-2026-05-27.jsonl", [{"clip": legacy_clip}])
+    write_jsonl(
+        tmp_path / "cloud-reviews" / "by-source-date" / "2026-05-18" / "cloud-reviewed-2026-05-18.jsonl",
+        [{"clip": source_date_clip}],
+    )
+
+    rows = list(load_latest_cloud_review_rows(tmp_path))
+
+    assert {row["clip"] for row in rows} == {legacy_clip, source_date_clip}
+
+
+def test_load_reviewed_event_rows_reads_source_date_subdirectories(tmp_path):
+    legacy = {"file": "/archive/2026-05-27/001/dav/09/legacy.dav"}
+    source_date = {"file": "/archive/2026-05-18/001/dav/09/source-date.dav"}
+    write_jsonl(tmp_path / "events" / "reviewed-2026-05-27.jsonl", [legacy])
+    write_jsonl(
+        tmp_path / "events" / "by-source-date" / "2026-05-18" / "reviewed-2026-05-18.jsonl",
+        [source_date],
+    )
+    write_jsonl(
+        tmp_path / "events" / "by-source-date" / "2026-05-18" / "events-2026-05-18.jsonl",
+        [{"file": "/archive/2026-05-18/001/dav/09/raw-event.dav"}],
+    )
+
+    rows = list(load_reviewed_event_rows(tmp_path))
+
+    assert rows == [source_date, legacy]
 
 
 def test_accounting_status_marks_crm_compare_candidate_ready():

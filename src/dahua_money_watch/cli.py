@@ -5,13 +5,12 @@ import json
 import shutil
 import sys
 from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import load_config, resolve_archive_root, resolve_runtime_dir, roi_from_config
 from .cloud_review import CloudReviewError, default_gcloud_project, review_clip_with_vertex, two_stage_money_review
-from .dahua import iter_dav_files
+from .dahua import iter_dav_files, parse_dahua_clip
 from .license import license_status, load_license
 from .motion import motion_events
 from .report import load_local_clip_metadata, write_daily_report, write_daily_report_json
@@ -96,8 +95,6 @@ def run_once(args: argparse.Namespace) -> int:
     store = StateStore(state_path)
     roi = roi_from_config(config)
 
-    events_path = runtime_dir / "events" / f"events-{today_stamp()}.jsonl"
-    reviewed_path = runtime_dir / "events" / f"reviewed-{today_stamp()}.jsonl"
     processed = 0
     motion_count = 0
     reviewed_count = 0
@@ -111,6 +108,8 @@ def run_once(args: argparse.Namespace) -> int:
         ):
             if not args.force and store.already_processed(path):
                 continue
+            source_date = source_date_for_path(path)
+            events_path, reviewed_path = event_output_paths(runtime_dir, source_date)
             events = motion_events(path, config["scan"])
             append_jsonl(events_path, events)
             motion_count += len(events)
@@ -288,35 +287,38 @@ def cloud_review_command(args: argparse.Namespace) -> int:
     if not project:
         raise SystemExit("Google Cloud project is required. Pass --project or set GOOGLE_CLOUD_PROJECT.")
 
-    output_path = runtime_dir / "cloud-reviews" / f"cloud-reviewed-{today_stamp()}.jsonl"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_by_name, _ambiguous = load_local_clip_metadata(runtime_dir)
+    output_paths = set()
     reviewed = 0
-    with output_path.open("a") as handle:
-        for clip in clips[:limit]:
-            try:
-                if args.stage == "handover":
-                    result = review_clip_with_vertex(clip, project, location, model)
-                else:
-                    result = two_stage_money_review(
-                        clip,
-                        project,
-                        location,
-                        model,
-                        runtime_dir / "cloud-reviews" / "amount-frames",
-                        escalation_model=escalation_model,
-                    )
-            except CloudReviewError as exc:
-                result = {
-                    "clip": str(clip),
-                    "model": model,
-                    "location": location,
-                    "stage": args.stage,
-                    "error": str(exc),
-                }
+    for clip in clips[:limit]:
+        output_path = cloud_review_output_path(runtime_dir, clip, metadata_by_name)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_paths.add(str(output_path))
+        try:
+            if args.stage == "handover":
+                result = review_clip_with_vertex(clip, project, location, model)
+            else:
+                result = two_stage_money_review(
+                    clip,
+                    project,
+                    location,
+                    model,
+                    runtime_dir / "cloud-reviews" / "amount-frames",
+                    escalation_model=escalation_model,
+                )
+        except CloudReviewError as exc:
+            result = {
+                "clip": str(clip),
+                "model": model,
+                "location": location,
+                "stage": args.stage,
+                "error": str(exc),
+            }
+        with output_path.open("a") as handle:
             handle.write(json.dumps(result, ensure_ascii=False) + "\n")
-            print(json.dumps(result, ensure_ascii=False))
-            reviewed += 1
-    print(json.dumps({"reviewed": reviewed, "output": str(output_path)}, ensure_ascii=False))
+        print(json.dumps(result, ensure_ascii=False))
+        reviewed += 1
+    print(json.dumps({"reviewed": reviewed, "outputs": sorted(output_paths)}, ensure_ascii=False))
     return 0
 
 
@@ -445,9 +447,33 @@ def candidate_clip_sort_key(path: Path) -> tuple:
     return (class_order, -score, path.name)
 
 
+def cloud_review_output_path(runtime_dir: Path, clip: Path, metadata_by_name: Dict[str, Any]) -> Path:
+    metadata = metadata_by_name.get(clip.name)
+    source_date = getattr(metadata, "source_date", "") if metadata is not None else ""
+    if not source_date:
+        source_date = "unknown-source-date"
+    return runtime_dir / "cloud-reviews" / "by-source-date" / source_date / f"cloud-reviewed-{source_date}.jsonl"
+
+
+def source_date_for_path(path: Path) -> str:
+    clip = parse_dahua_clip(path)
+    if clip is None or not clip.date:
+        return "unknown-source-date"
+    return clip.date
+
+
+def event_output_paths(runtime_dir: Path, source_date: str) -> tuple[Path, Path]:
+    if not source_date:
+        source_date = "unknown-source-date"
+    base = runtime_dir / "events" / "by-source-date" / source_date
+    return base / f"events-{source_date}.jsonl", base / f"reviewed-{source_date}.jsonl"
+
+
 def load_cloud_reviewed_clip_paths(runtime_dir: Path) -> set:
     reviewed = set()
-    for path in (runtime_dir / "cloud-reviews").glob("*.jsonl"):
+    paths = list((runtime_dir / "cloud-reviews").glob("*.jsonl"))
+    paths.extend((runtime_dir / "cloud-reviews" / "by-source-date").glob("*/*.jsonl"))
+    for path in paths:
         with path.open() as handle:
             for line in handle:
                 try:
@@ -470,10 +496,6 @@ def env(name: str) -> Optional[str]:
 def require_ffmpeg() -> None:
     if shutil.which("ffmpeg") is None:
         raise SystemExit("ffmpeg is required but was not found on PATH")
-
-
-def today_stamp() -> str:
-    return datetime.now().strftime("%Y-%m-%d")
 
 
 if __name__ == "__main__":

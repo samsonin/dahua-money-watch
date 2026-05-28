@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from dahua_money_watch.cli import cloud_review_command, discover_candidate_clips
+from dahua_money_watch.cli import cloud_review_command, cloud_review_output_path, discover_candidate_clips, event_output_paths
 from dahua_money_watch.report import expected_clip_name
 
 
@@ -118,3 +118,20 @@ def test_cloud_review_command_passes_escalation_model_from_config(tmp_path, monk
     assert result == 0
     assert captured["model"] == "gemini-2.5-flash-lite"
     assert captured["escalation_model"] == "gemini-2.5-flash"
+
+
+def test_cloud_review_output_path_uses_source_date(tmp_path):
+    event_row = event("2026-05-18", "high", 0.7, "09:01:00", "09:01:05")
+    clip = tmp_path / "clips" / expected_clip_name(event_row)
+    metadata = {clip.name: type("Metadata", (), {"source_date": "2026-05-18"})()}
+
+    output = cloud_review_output_path(tmp_path, clip, metadata)
+
+    assert output == tmp_path / "cloud-reviews" / "by-source-date" / "2026-05-18" / "cloud-reviewed-2026-05-18.jsonl"
+
+
+def test_event_output_paths_use_source_date(tmp_path):
+    events_path, reviewed_path = event_output_paths(tmp_path, "2026-05-18")
+
+    assert events_path == tmp_path / "events" / "by-source-date" / "2026-05-18" / "events-2026-05-18.jsonl"
+    assert reviewed_path == tmp_path / "events" / "by-source-date" / "2026-05-18" / "reviewed-2026-05-18.jsonl"
