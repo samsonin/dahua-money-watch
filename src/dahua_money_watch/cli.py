@@ -60,6 +60,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     cloud.add_argument("--project", help="Google Cloud project id. Defaults to config or GOOGLE_CLOUD_PROJECT.")
     cloud.add_argument("--location", help="Vertex AI location. Defaults to config or global.")
     cloud.add_argument("--model", help="Gemini model id. Defaults to config or gemini-2.5-flash-lite.")
+    cloud.add_argument("--escalation-model", help="Second-pass model for manual_review clips. Defaults to config.")
     cloud.add_argument("--limit", type=int)
     cloud.add_argument("--stage", choices=["handover", "two-stage"], default="two-stage")
     cloud.add_argument("--include-reviewed", action="store_true", help="Review clips even if they already appear in cloud review logs.")
@@ -221,6 +222,8 @@ def init_site_command(args: argparse.Namespace) -> int:
             "location": "global",
             "stage": "two-stage",
             "media_resolution": "low",
+            "escalation_enabled": False,
+            "escalation_model": "gemini-2.5-flash",
             "max_clips_per_run": 20,
             "max_clip_seconds_per_day": 1800,
         },
@@ -262,6 +265,14 @@ def cloud_review_command(args: argparse.Namespace) -> int:
     project = args.project or cloud_cfg.get("project") or env("GOOGLE_CLOUD_PROJECT") or default_gcloud_project()
     location = args.location or cloud_cfg.get("location") or env("GOOGLE_CLOUD_LOCATION") or "global"
     model = args.model or cloud_cfg.get("model") or "gemini-2.5-flash-lite"
+    requested_escalation_model = getattr(args, "escalation_model", None)
+    escalation_model = (
+        requested_escalation_model
+        or cloud_cfg.get("escalation_model")
+        or ("gemini-2.5-flash" if cloud_cfg.get("escalation_enabled") else None)
+    )
+    if not cloud_cfg.get("escalation_enabled") and not requested_escalation_model:
+        escalation_model = None
     reviewed_clip_paths = set() if args.include_reviewed else load_cloud_reviewed_clip_paths(runtime_dir)
     limit = int(args.limit or cloud_cfg.get("max_clips_per_run") or 20)
     clips = [Path(path) for path in args.clip] if args.clip else discover_candidate_clips(runtime_dir, limit, reviewed_clip_paths)
@@ -292,6 +303,7 @@ def cloud_review_command(args: argparse.Namespace) -> int:
                         location,
                         model,
                         runtime_dir / "cloud-reviews" / "amount-frames",
+                        escalation_model=escalation_model,
                     )
             except CloudReviewError as exc:
                 result = {

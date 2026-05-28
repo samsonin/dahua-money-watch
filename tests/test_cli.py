@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from dahua_money_watch.cli import discover_candidate_clips
+from dahua_money_watch.cli import cloud_review_command, discover_candidate_clips
 from dahua_money_watch.report import expected_clip_name
 
 
@@ -53,3 +53,68 @@ def test_discover_candidate_clips_fills_limit_after_oldest_day_is_closed(tmp_pat
     selected = discover_candidate_clips(tmp_path, limit=2)
 
     assert selected == [old_low_path, new_high_path]
+
+
+def test_cloud_review_command_passes_escalation_model_from_config(tmp_path, monkeypatch):
+    clip = tmp_path / "clips" / "candidate.mp4"
+    clip.parent.mkdir(parents=True)
+    clip.write_bytes(b"mp4")
+    config = {
+        "runtime_dir": str(tmp_path),
+        "archive_root": "/archive",
+        "pattern": "*.dav",
+        "state_db": str(tmp_path / "state" / "processed.sqlite"),
+        "roi": {"x": 0, "y": 0, "w": 10, "h": 10},
+        "scan": {"stable_file_age_seconds": 90},
+        "review": {},
+        "clip": {},
+        "cloud_review": {
+            "project": "demo-project",
+            "location": "global",
+            "model": "gemini-2.5-flash-lite",
+            "stage": "two-stage",
+            "escalation_enabled": True,
+            "escalation_model": "gemini-2.5-flash",
+        },
+    }
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(config))
+    captured = {}
+
+    def fake_two_stage_money_review(clip_path, project, location, model, frame_dir, timeout_seconds=120, **kwargs):
+        captured.update(
+            {
+                "clip": clip_path,
+                "project": project,
+                "location": location,
+                "model": model,
+                "frame_dir": frame_dir,
+                **kwargs,
+            }
+        )
+        return {"clip": str(clip_path), "event": {"recommended_action": "ignore"}}
+
+    monkeypatch.setattr("dahua_money_watch.cli.two_stage_money_review", fake_two_stage_money_review)
+
+    result = cloud_review_command(
+        type(
+            "Args",
+            (),
+            {
+                "config": str(config_path),
+                "runtime_dir": None,
+                "project": None,
+                "location": None,
+                "model": None,
+                "include_reviewed": False,
+                "limit": 1,
+                "clip": [str(clip)],
+                "dry_run": False,
+                "stage": "two-stage",
+            },
+        )()
+    )
+
+    assert result == 0
+    assert captured["model"] == "gemini-2.5-flash-lite"
+    assert captured["escalation_model"] == "gemini-2.5-flash"

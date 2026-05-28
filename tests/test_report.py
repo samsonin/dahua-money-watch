@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from dahua_money_watch.report import (
+    accounting_status,
     build_daily_report_payload,
     build_daily_report_rows,
     expected_clip_name,
@@ -99,3 +100,7 @@ def test_latest_cloud_review_prefers_success_after_error(tmp_path):
 
     assert len(rows) == 1
     assert "error" not in rows[0]
+
+
+def test_accounting_status_marks_crm_compare_candidate_ready():
+    assert accounting_status("crm_compare_candidate", {}) == "ready_for_candidate_comparison"

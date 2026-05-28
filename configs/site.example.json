@@ -56,6 +56,8 @@
     "location": "global",
     "stage": "two-stage",
     "media_resolution": "low",
+    "escalation_enabled": false,
+    "escalation_model": "gemini-2.5-flash",
     "max_clips_per_run": 20,
     "max_clip_seconds_per_day": 1800
   }

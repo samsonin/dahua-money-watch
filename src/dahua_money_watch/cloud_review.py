@@ -52,6 +52,32 @@ Return only valid JSON with these keys:
 }
 """
 
+ESCALATION_PROMPT = """You are doing a second-pass review of a shop counter payment candidate.
+
+The cheap first pass was unsure, so your goal is to reduce manual review.
+Use the frames to choose the most useful automatic outcome.
+
+Return crm_compare when a payment and amount are clear enough for accounting comparison.
+Return crm_compare_candidate when a payment is likely but the amount is estimated or partially visible.
+Return ignore_auto when the scene is not a payment event.
+Return manual_review only when the evidence is genuinely too ambiguous.
+
+Return only valid JSON with these keys:
+{
+  "recommended_action": "ignore_auto" | "crm_compare_candidate" | "crm_compare" | "manual_review",
+  "payment_likely": boolean,
+  "money_handover_visible": boolean,
+  "payment_type": "cash" | "card_or_phone" | "unknown",
+  "confidence": number,
+  "amount_status": "confirmed" | "estimated" | "unknown",
+  "amount": number | null,
+  "currency": "RUB" | "unknown",
+  "amount_confidence": number,
+  "visible_denominations": [number],
+  "evidence": string
+}
+"""
+
 
 class CloudReviewError(RuntimeError):
     pass
@@ -83,8 +109,9 @@ def review_clip_with_vertex(
         ],
         "generationConfig": {
             "temperature": 0,
-            "maxOutputTokens": 512,
+            "maxOutputTokens": 2048,
             "responseMimeType": "application/json",
+            "thinkingConfig": {"thinkingBudget": 0},
         },
     }
     url = (
@@ -111,6 +138,7 @@ def two_stage_money_review(
     model: str,
     frame_dir: Optional[Path] = None,
     timeout_seconds: int = 120,
+    escalation_model: Optional[str] = None,
 ) -> Dict[str, Any]:
     handover = review_clip_with_vertex(
         clip_path,
@@ -136,6 +164,18 @@ def two_stage_money_review(
             frame_dir,
             timeout_seconds,
         )
+    event = _money_event(clip_path, handover_response, amount["response"] if amount else None)
+    escalation: Optional[Dict[str, Any]] = None
+    if escalation_model and event.get("recommended_action") == "manual_review":
+        escalation = review_escalation_from_frames_with_vertex(
+            clip_path,
+            project_id,
+            location,
+            escalation_model,
+            frame_dir,
+            timeout_seconds,
+        )
+        event = apply_escalation_event(event, escalation["response"])
     return {
         "clip": str(clip_path),
         "model": model,
@@ -143,10 +183,12 @@ def two_stage_money_review(
         "stage": "two_stage",
         "handover": handover,
         "amount": amount,
-        "event": _money_event(clip_path, handover_response, amount["response"] if amount else None),
+        "escalation": escalation,
+        "event": event,
         "usage_metadata": {
             "handover": handover.get("usage_metadata", {}),
             "amount": (amount or {}).get("usage_metadata", {}),
+            "escalation": (escalation or {}).get("usage_metadata", {}),
         },
     }
 
@@ -168,6 +210,31 @@ def review_amount_from_frames_with_vertex(
     try:
         frame_paths = extract_amount_frames(clip_path, target_dir)
         response = review_frames_with_vertex(frame_paths, project_id, location, model, AMOUNT_PROMPT, timeout_seconds)
+        response["clip"] = str(clip_path)
+        response["frames"] = [str(path) for path in frame_paths]
+        return response
+    finally:
+        if cleanup is not None:
+            cleanup.cleanup()
+
+
+def review_escalation_from_frames_with_vertex(
+    clip_path: Path,
+    project_id: str,
+    location: str,
+    model: str,
+    frame_dir: Optional[Path] = None,
+    timeout_seconds: int = 120,
+) -> Dict[str, Any]:
+    cleanup = None
+    if frame_dir is None:
+        cleanup = tempfile.TemporaryDirectory()
+        target_dir = Path(cleanup.name)
+    else:
+        target_dir = frame_dir
+    try:
+        frame_paths = extract_amount_frames(clip_path, target_dir)
+        response = review_frames_with_vertex(frame_paths, project_id, location, model, ESCALATION_PROMPT, timeout_seconds)
         response["clip"] = str(clip_path)
         response["frames"] = [str(path) for path in frame_paths]
         return response
@@ -199,8 +266,9 @@ def review_frames_with_vertex(
         "contents": [{"role": "USER", "parts": parts}],
         "generationConfig": {
             "temperature": 0,
-            "maxOutputTokens": 512,
+            "maxOutputTokens": 2048,
             "responseMimeType": "application/json",
+            "thinkingConfig": {"thinkingBudget": 0},
         },
     }
     url = (
@@ -315,6 +383,29 @@ def _payment_type(handover: Dict[str, Any]) -> str:
     if handover.get("card_or_phone_payment"):
         return "card_or_phone"
     return "unknown"
+
+
+def apply_escalation_event(event: Dict[str, Any], escalation: Dict[str, Any]) -> Dict[str, Any]:
+    action = str(escalation.get("recommended_action") or "manual_review")
+    normalized_action = "ignore" if action == "ignore_auto" else action
+    if normalized_action not in {"ignore", "manual_review", "crm_compare_candidate", "crm_compare"}:
+        normalized_action = "manual_review"
+
+    merged = dict(event)
+    merged["recommended_action"] = normalized_action
+    merged["payment_likely"] = bool(escalation.get("payment_likely", normalized_action != "ignore"))
+    merged["money_handover_visible"] = bool(escalation.get("money_handover_visible", normalized_action != "ignore"))
+    merged["payment_type"] = str(escalation.get("payment_type") or merged.get("payment_type") or "unknown")
+    merged["amount_status"] = str(escalation.get("amount_status") or merged.get("amount_status") or "unknown")
+    merged["amount"] = escalation.get("amount", merged.get("amount"))
+    merged["currency"] = str(escalation.get("currency") or merged.get("currency") or "unknown")
+    merged["amount_confidence"] = float(escalation.get("amount_confidence") or merged.get("amount_confidence") or 0.0)
+    merged["visible_denominations"] = escalation.get("visible_denominations") or merged.get("visible_denominations") or []
+    merged["escalation_confidence"] = float(escalation.get("confidence") or 0.0)
+    evidence = dict(merged.get("evidence") or {})
+    evidence["escalation"] = str(escalation.get("evidence") or "")
+    merged["evidence"] = evidence
+    return merged
 
 
 def default_gcloud_project() -> Optional[str]:

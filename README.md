@@ -121,6 +121,20 @@ dahua-money-watch cloud-review \
 The default two-stage mode first returns `ignore`, `manual_review`, or `likely_payment`.
 Only `likely_payment` clips get a second amount-estimation request with
 `amount`, `amount_confidence`, and `amount_status`.
+To reduce manual review, enable economical escalation for uncertain clips:
+
+```json
+"cloud_review": {
+  "model": "gemini-2.5-flash-lite",
+  "stage": "two-stage",
+  "escalation_enabled": true,
+  "escalation_model": "gemini-2.5-flash"
+}
+```
+
+Escalation runs only after the first pass leaves the final action as
+`manual_review`. It sends extracted frames, not the whole original archive, and
+can return `ignore`, `crm_compare_candidate`, `crm_compare`, or `manual_review`.
 When multiple archive days are waiting, cloud review prioritizes the oldest
 source day first so daily accounting reports become complete one by one.
 
@@ -138,6 +152,9 @@ The report is written to `runtime/reports/accounting-YYYY-MM-DD.csv` by default.
 It includes event time, source clip name, final action, payment status, amount
 status, amount, currency, confidence, and model evidence. Add
 `--only-actionable` to exclude ignored clips.
+When escalation is enabled, `crm_compare_candidate` means the event is automated
+for candidate comparison even though the amount or evidence is less certain than
+a full `crm_compare`.
 
 For CRM/accounting integrations, write the same report as typed JSON:
 

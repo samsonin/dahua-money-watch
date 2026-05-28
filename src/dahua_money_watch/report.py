@@ -187,6 +187,8 @@ def accounting_status(action: str, row: Dict[str, Any]) -> str:
         return "review_error"
     if action == "crm_compare":
         return "ready_for_comparison"
+    if action == "crm_compare_candidate":
+        return "ready_for_candidate_comparison"
     if action == "manual_review":
         return "manual_review_required"
     if action == "ignore":
