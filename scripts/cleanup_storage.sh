@@ -6,7 +6,6 @@ CONFIG="${CONFIG:-$PROJECT_DIR/configs/production.json}"
 TARGET_USED_GB="${TARGET_USED_GB:-60}"
 LOW_WATERMARK_GB="${LOW_WATERMARK_GB:-58}"
 KEEP_RECENT_DAYS="${KEEP_RECENT_DAYS:-7}"
-TRANSIENT_MAX_AGE_DAYS="${TRANSIENT_MAX_AGE_DAYS:-30}"
 DRY_RUN="${DRY_RUN:-0}"
 LOG_PREFIX="dahua-money-watch-cleanup"
 
@@ -28,13 +27,11 @@ PY
 }
 
 archive_root="$(read_config_value archive_root)"
-runtime_dir="$(read_config_value runtime_dir)"
-if [[ -z "$archive_root" || -z "$runtime_dir" ]]; then
-  echo "$LOG_PREFIX: archive_root and runtime_dir are required in $CONFIG" >&2
+if [[ -z "$archive_root" ]]; then
+  echo "$LOG_PREFIX: archive_root is required in $CONFIG" >&2
   exit 2
 fi
 
-runtime_dir="$(cd "$PROJECT_DIR" && mkdir -p "$runtime_dir" && cd "$runtime_dir" && pwd)"
 archive_root="$(cd "$archive_root" && pwd)"
 mount_point="$(df -P "$PROJECT_DIR" | awk 'NR==2 {print $6}')"
 
@@ -84,16 +81,4 @@ while IFS= read -r day_dir; do
   fi
 done < <(find "$archive_root" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended -regex '.*/[0-9]{4}-[0-9]{2}-[0-9]{2}' -printf '%p\n' | sort)
 
-for transient_dir in "$runtime_dir/clips" "$runtime_dir/thumbs" "$runtime_dir/cloud-reviews/amount-frames" "$runtime_dir/cloud-reviews/amount-frames-escalation-test"; do
-  [[ -d "$transient_dir" ]] || continue
-  while IFS= read -r file_path; do
-    delete_path "$file_path"
-    if should_stop; then
-      echo "$LOG_PREFIX: reached low watermark after transient cleanup"
-      exit 0
-    fi
-  done < <(find "$transient_dir" -type f -mtime "+$TRANSIENT_MAX_AGE_DAYS" -printf '%T@ %p\n' | sort -n | cut -d' ' -f2-)
-  find "$transient_dir" -type d -empty -delete 2>/dev/null || true
-done
-
-echo "$LOG_PREFIX: finished used=$(used_gb)G"
+echo "$LOG_PREFIX: finished used=$(used_gb)G; runtime outputs are preserved"
