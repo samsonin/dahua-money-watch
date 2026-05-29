@@ -203,7 +203,7 @@ def test_build_handover_evidence_payload_includes_confirmed_manual_review_cash_h
     )
 
     def fake_extract_clip(source_path, target_path, start_s, duration_s, crf, preset, audio):
-        target_path.parent.mkdir(parents=True)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_bytes(b"handover")
 
     monkeypatch.setattr("dahua_money_watch.handover_evidence.extract_clip", fake_extract_clip)
@@ -218,3 +218,131 @@ def test_build_handover_evidence_payload_includes_confirmed_manual_review_cash_h
     assert payload["summary"]["total"] == 1
     assert payload["events"][0]["review"]["final_action"] == "manual_review"
     assert payload["events"][0]["accounting"]["comparison_status"] == "handover_confirmed_amount_estimated"
+
+
+def test_build_handover_evidence_payload_includes_suspected_payment_interactions(tmp_path, monkeypatch):
+    source = tmp_path / "archive" / "2026-05-25" / "001" / "dav" / "18" / "18.18.00-18.19.00[M][0@0][0].dav"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"dav")
+    event = {
+        "file": str(source),
+        "start_time": "18:18:37",
+        "end_time": "18:18:45",
+        "start_offset_s": 37.0,
+        "end_offset_s": 45.0,
+        "combined_score": 0.66,
+        "class": "high",
+    }
+    clip = tmp_path / "clips" / expected_clip_name(event)
+    clip.parent.mkdir(parents=True)
+    clip.write_bytes(b"mp4")
+    write_jsonl(tmp_path / "events" / "by-source-date" / "2026-05-25" / "reviewed-2026-05-25.jsonl", [event])
+    cloud_path = tmp_path / "cloud-reviewed.jsonl"
+    write_jsonl(
+        cloud_path,
+        [
+            {
+                "clip": str(clip),
+                "event": {
+                    "recommended_action": "manual_review",
+                    "payment_likely": True,
+                    "money_handover_visible": False,
+                    "payment_type": "unknown",
+                    "handover_confidence": 0.55,
+                    "amount_status": "unknown",
+                    "amount": None,
+                    "currency": "RUB",
+                    "amount_confidence": 0,
+                    "visible_denominations": [],
+                    "evidence": {"timestamp_hint": "00:04", "handover": "Customer and cashier interact at the counter."},
+                },
+            }
+        ],
+    )
+
+    def fake_extract_clip(source_path, target_path, start_s, duration_s, crf, preset, audio):
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(b"handover")
+
+    monkeypatch.setattr("dahua_money_watch.handover_evidence.extract_clip", fake_extract_clip)
+
+    payload = build_handover_evidence_payload(
+        tmp_path,
+        {"review": {"pre_padding_seconds": 5.0}, "clip": {}},
+        cloud_path,
+        min_handover_confidence=0.8,
+        min_suspected_confidence=0.1,
+    )
+
+    assert payload["summary"]["total"] == 1
+    assert payload["progress"]["confirmed_handover_candidates"] == 0
+    assert payload["progress"]["suspected_payment_interactions"] == 1
+    assert payload["events"][0]["review"]["handover_confirmed"] is False
+    assert payload["events"][0]["review"]["handover_suspected"] is True
+    assert payload["events"][0]["accounting"]["comparison_status"] == "payment_interaction_suspected"
+
+
+def test_build_handover_evidence_payload_caps_suspected_events_after_confirmed_events(tmp_path, monkeypatch):
+    source = tmp_path / "archive" / "2026-05-20" / "001" / "dav" / "12" / "12.00.00-12.01.00[M][0@0][0].dav"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"dav")
+    events = []
+    clouds = []
+    for index in range(4):
+        event = {
+            "file": str(source),
+            "start_time": f"12:00:{10 + index:02d}",
+            "end_time": f"12:00:{11 + index:02d}",
+            "start_offset_s": 10.0 + index,
+            "end_offset_s": 11.0 + index,
+            "combined_score": 0.8 - index * 0.1,
+            "class": "high" if index < 3 else "medium",
+        }
+        clip = tmp_path / "clips" / expected_clip_name(event)
+        clip.parent.mkdir(parents=True, exist_ok=True)
+        clip.write_bytes(b"mp4")
+        events.append(event)
+        clouds.append(
+            {
+                "clip": str(clip),
+                "event": {
+                    "recommended_action": "manual_review",
+                    "payment_likely": index == 0,
+                    "money_handover_visible": index == 0,
+                    "payment_type": "cash" if index == 0 else "unknown",
+                    "handover_confidence": 0.9 if index == 0 else 0.1,
+                    "amount_status": "unknown",
+                    "amount": None,
+                    "currency": "RUB",
+                    "amount_confidence": 0,
+                    "visible_denominations": [],
+                    "evidence": {"timestamp_hint": "00:01", "handover": "Counter interaction."},
+                },
+            }
+        )
+    write_jsonl(tmp_path / "events" / "by-source-date" / "2026-05-20" / "reviewed-2026-05-20.jsonl", events)
+    cloud_path = tmp_path / "cloud-reviewed.jsonl"
+    write_jsonl(cloud_path, clouds)
+
+    def fake_extract_clip(source_path, target_path, start_s, duration_s, crf, preset, audio):
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(b"handover")
+
+    monkeypatch.setattr("dahua_money_watch.handover_evidence.extract_clip", fake_extract_clip)
+
+    payload = build_handover_evidence_payload(
+        tmp_path,
+        {"review": {"pre_padding_seconds": 0.0}, "clip": {}},
+        cloud_path,
+        min_handover_confidence=0.8,
+        min_suspected_confidence=0.1,
+        max_events_per_day=2,
+    )
+
+    assert payload["progress"]["confirmed_handover_candidates"] == 1
+    assert payload["progress"]["suspected_payment_interactions"] == 3
+    assert payload["progress"]["exported_events"] == 2
+    assert [event["review"]["handover_review_status"] for event in payload["events"]] == [
+        "confirmed_cash_handover",
+        "suspected_payment_interaction",
+    ]

@@ -4,6 +4,7 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 STATE_DIR="$PROJECT_DIR/runtime/state/handover-compare-sent"
 CLOUD_REVIEW_ROOT="$PROJECT_DIR/runtime/cloud-reviews/by-source-date"
+HANDOVER_COMPARE_STATE_VERSION="${HANDOVER_COMPARE_STATE_VERSION:-handover-evidence-schema-1.1-suspected-v2}"
 
 mkdir -p "$STATE_DIR"
 
@@ -20,7 +21,8 @@ while IFS= read -r -d '' cloud_file; do
     continue
   fi
 
-  current_hash="$(sha256sum "$cloud_file" | awk '{print $1}')"
+  cloud_hash="$(sha256sum "$cloud_file" | awk '{print $1}')"
+  current_hash="$(printf '%s %s\n' "$HANDOVER_COMPARE_STATE_VERSION" "$cloud_hash" | sha256sum | awk '{print $1}')"
   state_file="$STATE_DIR/$date_dir.sha256"
   previous_hash=""
   if [[ -f "$state_file" ]]; then

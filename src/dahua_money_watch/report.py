@@ -157,6 +157,8 @@ def json_event_from_row(row: Dict[str, Any]) -> Dict[str, Any]:
             "payment_likely": _nullable_bool(row.get("payment_likely")),
             "money_handover_visible": _nullable_bool(row.get("money_handover_visible")),
             "handover_confirmed": _nullable_bool(row.get("handover_confirmed")),
+            "handover_suspected": _nullable_bool(row.get("handover_suspected")),
+            "handover_review_status": row.get("handover_review_status") or "",
             "payment_type": row.get("payment_type") or "unknown",
             "handover_confidence": _nullable_float(row.get("handover_confidence")),
             "timestamp_hint": row.get("timestamp_hint") or "",
@@ -192,6 +194,8 @@ def accounting_status(action: str, row: Dict[str, Any]) -> str:
         return "review_error"
     if _nullable_bool(row.get("handover_confirmed")) and action in {"crm_compare_candidate", "manual_review"}:
         return "handover_confirmed_amount_estimated"
+    if _nullable_bool(row.get("handover_suspected")) and action in {"crm_compare_candidate", "manual_review"}:
+        return "payment_interaction_suspected"
     if action == "crm_compare":
         return "ready_for_comparison"
     if action == "crm_compare_candidate":

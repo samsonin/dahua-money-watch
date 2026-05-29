@@ -11,20 +11,31 @@ from .review import safe_name
 from .video import extract_clip
 
 
+REPORT_SCHEMA_VERSION = "1.1"
+HANDOVER_REVIEW_STATUS_CONFIRMED = "confirmed_cash_handover"
+HANDOVER_REVIEW_STATUS_SUSPECTED = "suspected_payment_interaction"
+SUSPECTED_LOCAL_CLASSES = {"high", "medium"}
+MIN_SUSPECTED_LOCAL_SCORE = 0.45
+
+
 def build_handover_evidence_payload(
     runtime_dir: Path,
     config: Dict[str, Any],
     cloud_review_path: Path,
     report_date: Optional[str] = None,
     min_handover_confidence: float = 0.8,
+    min_suspected_confidence: float = 0.1,
+    max_events_per_day: int = 10,
     pre_seconds: float = 3.0,
     post_seconds: float = 5.0,
 ) -> Dict[str, Any]:
     metadata_index, ambiguous = load_local_clip_metadata(runtime_dir)
     rows: List[Dict[str, Any]] = []
+    candidates: List[Tuple[Dict[str, Any], Optional[Any], str]] = []
     clip_errors: List[Dict[str, str]] = []
     source_rows = 0
     confirmed_candidates = 0
+    suspected_interactions = 0
     source_dates = {}
     clip_base_url = evidence_clip_base_url(config)
 
@@ -35,9 +46,16 @@ def build_handover_evidence_payload(
         row = report_row(cloud_row, metadata, ambiguous)
         if report_date and row["source_date"] != report_date:
             continue
-        if not is_confirmed_handover_candidate(row, min_handover_confidence):
+        handover_status = handover_review_status(row, min_handover_confidence, min_suspected_confidence)
+        if not handover_status:
             continue
-        confirmed_candidates += 1
+        if handover_status == HANDOVER_REVIEW_STATUS_CONFIRMED:
+            confirmed_candidates += 1
+        else:
+            suspected_interactions += 1
+        candidates.append((row, metadata, handover_status))
+
+    for row, metadata, handover_status in select_handover_rows(candidates, max_events_per_day):
         if metadata is None:
             clip_errors.append({"clip": row.get("clip") or "", "error": "missing local metadata"})
             continue
@@ -57,26 +75,32 @@ def build_handover_evidence_payload(
             if error:
                 clip_errors.append({"clip": row.get("clip") or "", "error": error})
                 continue
-        row["handover_confirmed"] = True
+        row["handover_confirmed"] = handover_status == HANDOVER_REVIEW_STATUS_CONFIRMED
+        row["handover_suspected"] = handover_status == HANDOVER_REVIEW_STATUS_SUSPECTED
+        row["handover_review_status"] = handover_status
         rows.append(row)
         source_dates[row["source_date"] or "unknown-source-date"] = source_dates.get(row["source_date"] or "unknown-source-date", 0) + 1
 
     rows.sort(key=lambda item: (item["source_date"], item["event_start_time"], item["clip"]))
     payload_source_date = report_date or "mixed"
     return {
-        "schema_version": "1.0",
+        "schema_version": REPORT_SCHEMA_VERSION,
         "report_type": "dahua_money_watch.handover_evidence",
         "source_date": payload_source_date,
         "status": "handover_evidence",
         "complete": False,
         "thresholds": {
             "min_handover_confidence": min_handover_confidence,
+            "min_suspected_confidence": min_suspected_confidence,
+            "min_suspected_local_score": MIN_SUSPECTED_LOCAL_SCORE,
+            "max_events_per_day": max_events_per_day,
             "pre_seconds": pre_seconds,
             "post_seconds": post_seconds,
         },
         "progress": {
             "source_cloud_review_rows": source_rows,
             "confirmed_handover_candidates": confirmed_candidates,
+            "suspected_payment_interactions": suspected_interactions,
             "exported_events": len(rows),
             "clip_errors": len(clip_errors),
         },
@@ -94,6 +118,8 @@ def write_handover_evidence_report(
     output_path: Path,
     report_date: Optional[str] = None,
     min_handover_confidence: float = 0.8,
+    min_suspected_confidence: float = 0.1,
+    max_events_per_day: int = 10,
     pre_seconds: float = 3.0,
     post_seconds: float = 5.0,
 ) -> Tuple[int, Dict[str, Any]]:
@@ -103,6 +129,8 @@ def write_handover_evidence_report(
         cloud_review_path,
         report_date,
         min_handover_confidence,
+        min_suspected_confidence,
+        max_events_per_day,
         pre_seconds,
         post_seconds,
     )
@@ -119,6 +147,50 @@ def is_confirmed_handover_candidate(row: Dict[str, Any], min_handover_confidence
         and str(row.get("payment_type") or "").lower() == "cash"
         and _float(row.get("handover_confidence")) >= min_handover_confidence
     )
+
+
+def is_suspected_payment_interaction(row: Dict[str, Any], min_suspected_confidence: float) -> bool:
+    if row.get("final_action") not in {"crm_compare_candidate", "manual_review"}:
+        return False
+    if str(row.get("payment_type") or "").lower() not in {"cash", "unknown"}:
+        return False
+    model_suspected = (
+        (_truthy(row.get("payment_likely")) or _truthy(row.get("money_handover_visible")))
+        and _float(row.get("handover_confidence")) >= min_suspected_confidence
+    )
+    local_suspected = (
+        str(row.get("local_class") or "").lower() in SUSPECTED_LOCAL_CLASSES
+        and _float(row.get("local_score")) >= MIN_SUSPECTED_LOCAL_SCORE
+    )
+    return model_suspected or local_suspected
+
+
+def handover_review_status(
+    row: Dict[str, Any],
+    min_handover_confidence: float,
+    min_suspected_confidence: float,
+) -> str:
+    if is_confirmed_handover_candidate(row, min_handover_confidence):
+        return HANDOVER_REVIEW_STATUS_CONFIRMED
+    if is_suspected_payment_interaction(row, min_suspected_confidence):
+        return HANDOVER_REVIEW_STATUS_SUSPECTED
+    return ""
+
+
+def select_handover_rows(
+    candidates: List[Tuple[Dict[str, Any], Optional[Any], str]],
+    max_events_per_day: int,
+) -> List[Tuple[Dict[str, Any], Optional[Any], str]]:
+    confirmed = [item for item in candidates if item[2] == HANDOVER_REVIEW_STATUS_CONFIRMED]
+    suspected = [item for item in candidates if item[2] == HANDOVER_REVIEW_STATUS_SUSPECTED]
+    slots = max(0, int(max_events_per_day) - len(confirmed))
+    selected = confirmed + sorted(suspected, key=_suspected_priority)[:slots]
+    return sorted(selected, key=lambda item: (item[0]["source_date"], item[0]["event_start_time"], item[0]["clip"]))
+
+
+def _suspected_priority(item: Tuple[Dict[str, Any], Optional[Any], str]) -> Tuple[float, float, str]:
+    row = item[0]
+    return (-_float(row.get("local_score")), -_float(row.get("handover_confidence")), row.get("event_start_time") or "")
 
 
 def write_handover_clip(

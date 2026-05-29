@@ -91,6 +91,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     handover_report.add_argument("--runtime-dir")
     handover_report.add_argument("--output", required=True)
     handover_report.add_argument("--min-handover-confidence", type=float, default=0.8)
+    handover_report.add_argument("--min-suspected-confidence", type=float, default=0.1)
+    handover_report.add_argument("--max-events-per-day", type=int, default=10)
     handover_report.add_argument("--pre-seconds", type=float, default=3.0)
     handover_report.add_argument("--post-seconds", type=float, default=5.0)
     handover_report.set_defaults(func=handover_report_command)
@@ -381,6 +383,8 @@ def handover_report_command(args: argparse.Namespace) -> int:
         output_path,
         args.date,
         float(args.min_handover_confidence),
+        float(getattr(args, "min_suspected_confidence", 0.1)),
+        int(getattr(args, "max_events_per_day", 10)),
         float(args.pre_seconds),
         float(args.post_seconds),
     )

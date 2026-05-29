@@ -174,7 +174,18 @@ def test_handover_report_command_uses_config_and_writes_payload(tmp_path, monkey
     output_path = tmp_path / "reports" / "handover.json"
     captured = {}
 
-    def fake_write_report(runtime_dir, config_arg, cloud_review_path, output, report_date, min_confidence, pre_seconds, post_seconds):
+    def fake_write_report(
+        runtime_dir,
+        config_arg,
+        cloud_review_path,
+        output,
+        report_date,
+        min_confidence,
+        min_suspected_confidence,
+        max_events_per_day,
+        pre_seconds,
+        post_seconds,
+    ):
         captured.update(
             {
                 "runtime_dir": runtime_dir,
@@ -183,6 +194,8 @@ def test_handover_report_command_uses_config_and_writes_payload(tmp_path, monkey
                 "output": output,
                 "report_date": report_date,
                 "min_confidence": min_confidence,
+                "min_suspected_confidence": min_suspected_confidence,
+                "max_events_per_day": max_events_per_day,
                 "pre_seconds": pre_seconds,
                 "post_seconds": post_seconds,
             }
@@ -204,6 +217,8 @@ def test_handover_report_command_uses_config_and_writes_payload(tmp_path, monkey
                 "date": "2026-05-27",
                 "output": str(output_path),
                 "min_handover_confidence": 0.85,
+                "min_suspected_confidence": 0.4,
+                "max_events_per_day": 8,
                 "pre_seconds": 2.0,
                 "post_seconds": 6.0,
             },
@@ -216,5 +231,7 @@ def test_handover_report_command_uses_config_and_writes_payload(tmp_path, monkey
     assert captured["output"] == output_path
     assert captured["report_date"] == "2026-05-27"
     assert captured["min_confidence"] == 0.85
+    assert captured["min_suspected_confidence"] == 0.4
+    assert captured["max_events_per_day"] == 8
     assert captured["pre_seconds"] == 2.0
     assert captured["post_seconds"] == 6.0
