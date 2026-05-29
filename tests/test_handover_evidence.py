@@ -160,3 +160,61 @@ def test_build_handover_evidence_payload_skips_confirmed_candidate_when_clip_can
     assert payload["progress"]["confirmed_handover_candidates"] == 1
     assert payload["progress"]["clip_errors"] == 1
     assert payload["clip_errors"][0]["clip"] == clip.name
+
+
+def test_build_handover_evidence_payload_includes_confirmed_manual_review_cash_handover(tmp_path, monkeypatch):
+    source = tmp_path / "archive" / "2026-05-28" / "001" / "dav" / "18" / "18.00.00-18.01.00[M][0@0][0].dav"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"dav")
+    event = {
+        "file": str(source),
+        "start_time": "18:00:10",
+        "end_time": "18:00:20",
+        "start_offset_s": 10.0,
+        "end_offset_s": 20.0,
+        "combined_score": 0.5,
+        "class": "medium",
+    }
+    clip = tmp_path / "clips" / expected_clip_name(event)
+    clip.parent.mkdir(parents=True)
+    clip.write_bytes(b"mp4")
+    write_jsonl(tmp_path / "events" / "by-source-date" / "2026-05-28" / "reviewed-2026-05-28.jsonl", [event])
+    cloud_path = tmp_path / "cloud-reviewed.jsonl"
+    write_jsonl(
+        cloud_path,
+        [
+            {
+                "clip": str(clip),
+                "event": {
+                    "recommended_action": "manual_review",
+                    "payment_likely": True,
+                    "money_handover_visible": True,
+                    "payment_type": "cash",
+                    "handover_confidence": 0.8,
+                    "amount_status": "unknown",
+                    "amount": None,
+                    "currency": "RUB",
+                    "amount_confidence": 0,
+                    "visible_denominations": [],
+                    "evidence": {"timestamp_hint": "00:06", "handover": "Cash is being handled."},
+                },
+            }
+        ],
+    )
+
+    def fake_extract_clip(source_path, target_path, start_s, duration_s, crf, preset, audio):
+        target_path.parent.mkdir(parents=True)
+        target_path.write_bytes(b"handover")
+
+    monkeypatch.setattr("dahua_money_watch.handover_evidence.extract_clip", fake_extract_clip)
+
+    payload = build_handover_evidence_payload(
+        tmp_path,
+        {"review": {"pre_padding_seconds": 5.0}, "clip": {}},
+        cloud_path,
+        min_handover_confidence=0.8,
+    )
+
+    assert payload["summary"]["total"] == 1
+    assert payload["events"][0]["review"]["final_action"] == "manual_review"
+    assert payload["events"][0]["accounting"]["comparison_status"] == "handover_confirmed_amount_estimated"

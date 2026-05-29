@@ -53,6 +53,7 @@ def extract_clip(
     crf: int,
     preset: str,
     audio: bool,
+    timeout_seconds: int = 120,
 ) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -79,7 +80,11 @@ def extract_clip(
     else:
         cmd += ["-an"]
     cmd.append(str(target))
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        target.unlink(missing_ok=True)
+        raise
 
 
 def extract_frame(source: Path, target: Path, offset_s: float) -> None:

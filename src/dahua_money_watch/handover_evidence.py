@@ -113,7 +113,7 @@ def write_handover_evidence_report(
 
 def is_confirmed_handover_candidate(row: Dict[str, Any], min_handover_confidence: float) -> bool:
     return (
-        row.get("final_action") == "crm_compare_candidate"
+        row.get("final_action") in {"crm_compare_candidate", "manual_review"}
         and _truthy(row.get("payment_likely"))
         and _truthy(row.get("money_handover_visible"))
         and str(row.get("payment_type") or "").lower() == "cash"

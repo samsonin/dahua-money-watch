@@ -190,11 +190,11 @@ def json_event_from_row(row: Dict[str, Any]) -> Dict[str, Any]:
 def accounting_status(action: str, row: Dict[str, Any]) -> str:
     if row.get("review_error"):
         return "review_error"
+    if _nullable_bool(row.get("handover_confirmed")) and action in {"crm_compare_candidate", "manual_review"}:
+        return "handover_confirmed_amount_estimated"
     if action == "crm_compare":
         return "ready_for_comparison"
     if action == "crm_compare_candidate":
-        if _nullable_bool(row.get("handover_confirmed")):
-            return "handover_confirmed_amount_estimated"
         return "ready_for_candidate_comparison"
     if action == "manual_review":
         return "manual_review_required"
