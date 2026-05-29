@@ -7,7 +7,7 @@ SERVICE_USER="${SERVICE_USER:-root}"
 cd "$PROJECT_DIR"
 
 apt-get update
-apt-get install -y ffmpeg python3-venv python3-pip
+apt-get install -y cron ffmpeg python3-venv python3-pip
 
 python3 -m venv .venv
 . .venv/bin/activate
@@ -16,6 +16,7 @@ pip install -e .
 
 mkdir -p "$PROJECT_DIR/runtime"/{events,clips,thumbs,state,logs}
 chmod +x "$PROJECT_DIR/scripts/run_handover_compare.sh" "$PROJECT_DIR/scripts/run_handover_compare_pending.sh" 2>/dev/null || true
+chmod +x "$PROJECT_DIR/scripts/cleanup_storage.sh" 2>/dev/null || true
 
 sed "s#__PROJECT_DIR__#$PROJECT_DIR#g" deploy/systemd/dahua-money-watch.service > /etc/systemd/system/dahua-money-watch.service
 install -m 0644 deploy/systemd/dahua-money-watch.timer /etc/systemd/system/dahua-money-watch.timer
@@ -23,8 +24,10 @@ sed "s#__PROJECT_DIR__#$PROJECT_DIR#g" deploy/systemd/dahua-money-watch-cloud.se
 install -m 0644 deploy/systemd/dahua-money-watch-cloud.timer /etc/systemd/system/dahua-money-watch-cloud.timer
 sed "s#__PROJECT_DIR__#$PROJECT_DIR#g" deploy/systemd/dahua-money-watch-handover-compare.service > /etc/systemd/system/dahua-money-watch-handover-compare.service
 install -m 0644 deploy/systemd/dahua-money-watch-handover-compare.timer /etc/systemd/system/dahua-money-watch-handover-compare.timer
+sed "s#__PROJECT_DIR__#$PROJECT_DIR#g" deploy/cron/dahua-money-watch-cleanup > /etc/cron.d/dahua-money-watch-cleanup
 
 systemctl daemon-reload
+systemctl enable --now cron
 systemctl enable --now dahua-money-watch.timer
 systemctl enable --now dahua-money-watch-cloud.timer
 systemctl enable --now dahua-money-watch-handover-compare.timer

@@ -1,0 +1,4 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+17 * * * * root flock -n /tmp/dahua-money-watch-cleanup.lock __PROJECT_DIR__/scripts/cleanup_storage.sh >> __PROJECT_DIR__/runtime/logs/cleanup-storage.log 2>&1
