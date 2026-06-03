@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from dahua_money_watch.cloud_review import apply_escalation_event
+from dahua_money_watch.cloud_review import apply_escalation_event, is_fatal_vertex_permission_error
 
 
 def base_manual_event():
@@ -65,3 +65,9 @@ def test_apply_escalation_can_auto_ignore_manual_review():
     assert event["payment_likely"] is False
     assert event["amount"] is None
 
+
+def test_is_fatal_vertex_permission_error_detects_project_access_failures():
+    assert is_fatal_vertex_permission_error("PERMISSION_DENIED")
+    assert is_fatal_vertex_permission_error("reason: CONSUMER_INVALID")
+    assert is_fatal_vertex_permission_error("Permission denied on resource project demo")
+    assert not is_fatal_vertex_permission_error("temporary network timeout")

@@ -8,6 +8,7 @@ from dahua_money_watch.cli import (
     event_output_paths,
     handover_report_command,
 )
+from dahua_money_watch.cloud_review import CloudReviewError
 from dahua_money_watch.report import expected_clip_name
 
 
@@ -137,6 +138,65 @@ def test_cloud_review_command_passes_escalation_model_from_config(tmp_path, monk
     assert result == 0
     assert captured["model"] == "gemini-2.5-flash-lite"
     assert captured["escalation_model"] == "gemini-2.5-flash"
+
+
+def test_cloud_review_command_stops_on_vertex_permission_error_without_writing_jsonl(tmp_path, monkeypatch, capsys):
+    event_row = event("2026-06-02", "high", 0.7, "12:12:36", "12:12:39")
+    clip = touch_clip(tmp_path, event_row)
+    write_jsonl(tmp_path / "events" / "by-source-date" / "2026-06-02" / "reviewed-2026-06-02.jsonl", [event_row])
+    config = {
+        "runtime_dir": str(tmp_path),
+        "archive_root": "/archive",
+        "pattern": "*.dav",
+        "state_db": str(tmp_path / "state" / "processed.sqlite"),
+        "roi": {"x": 0, "y": 0, "w": 10, "h": 10},
+        "scan": {"stable_file_age_seconds": 90},
+        "review": {},
+        "clip": {},
+        "cloud_review": {
+            "project": "demo-project",
+            "location": "global",
+            "model": "gemini-2.5-flash-lite",
+            "stage": "two-stage",
+        },
+    }
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(config))
+
+    def fake_two_stage_money_review(*args, **kwargs):
+        raise CloudReviewError(
+            "Vertex AI request failed with HTTP 403: "
+            '{"error":{"status":"PERMISSION_DENIED","details":[{"reason":"CONSUMER_INVALID"}]}}'
+        )
+
+    monkeypatch.setattr("dahua_money_watch.cli.two_stage_money_review", fake_two_stage_money_review)
+
+    result = cloud_review_command(
+        type(
+            "Args",
+            (),
+            {
+                "config": str(config_path),
+                "runtime_dir": None,
+                "project": None,
+                "location": None,
+                "model": None,
+                "include_reviewed": False,
+                "date": "2026-06-02",
+                "limit": 1,
+                "clip": [str(clip)],
+                "dry_run": False,
+                "stage": "two-stage",
+            },
+        )()
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    cloud_path = tmp_path / "cloud-reviews" / "by-source-date" / "2026-06-02" / "cloud-reviewed-2026-06-02.jsonl"
+    assert result == 1
+    assert output["fatal_error"] is True
+    assert output["reason"] == "vertex_permission_denied"
+    assert not cloud_path.exists()
 
 
 def test_cloud_review_output_path_uses_source_date(tmp_path):

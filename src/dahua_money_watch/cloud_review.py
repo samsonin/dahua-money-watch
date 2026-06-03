@@ -83,6 +83,15 @@ class CloudReviewError(RuntimeError):
     pass
 
 
+def is_fatal_vertex_permission_error(error: Any) -> bool:
+    text = str(error)
+    return (
+        "PERMISSION_DENIED" in text
+        or "CONSUMER_INVALID" in text
+        or "Permission denied on resource project" in text
+    )
+
+
 def review_clip_with_vertex(
     clip_path: Path,
     project_id: str,

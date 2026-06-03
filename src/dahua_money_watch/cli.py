@@ -9,7 +9,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import load_config, resolve_archive_root, resolve_runtime_dir, roi_from_config
-from .cloud_review import CloudReviewError, default_gcloud_project, review_clip_with_vertex, two_stage_money_review
+from .cloud_review import (
+    CloudReviewError,
+    default_gcloud_project,
+    is_fatal_vertex_permission_error,
+    review_clip_with_vertex,
+    two_stage_money_review,
+)
 from .dahua import iter_dav_files, parse_dahua_clip
 from .handover_evidence import write_handover_evidence_report
 from .license import license_status, load_license
@@ -329,6 +335,23 @@ def cloud_review_command(args: argparse.Namespace) -> int:
                     escalation_model=escalation_model,
                 )
         except CloudReviewError as exc:
+            if is_fatal_vertex_permission_error(exc):
+                print(
+                    json.dumps(
+                        {
+                            "fatal_error": True,
+                            "reason": "vertex_permission_denied",
+                            "message": str(exc),
+                            "project": project,
+                            "location": location,
+                            "model": model,
+                            "clip": str(clip),
+                            "reviewed": reviewed,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                return 1
             result = {
                 "clip": str(clip),
                 "model": model,
