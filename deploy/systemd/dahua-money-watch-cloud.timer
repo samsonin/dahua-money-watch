@@ -2,6 +2,7 @@
 Description=Run Dahua Money Watch cloud review scanner
 
 [Timer]
+OnActiveSec=1min
 OnBootSec=10min
 OnUnitInactiveSec=10min
 AccuracySec=1min
