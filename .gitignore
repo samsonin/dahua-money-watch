@@ -34,3 +34,4 @@ logs/
 *.jpeg
 *.png
 *.wav
+.idea/
